@@ -1,0 +1,10 @@
+{
+  "description": "Analyze side-scan sonar images to detect and classify marine debris with AI, providing interactive maps, detailed reports, and intuitive oceanographic insights.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

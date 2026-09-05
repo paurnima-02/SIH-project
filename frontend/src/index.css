@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+@import 'tailwindcss';
+
+@theme inline {
+  --color-bg: #0A0E14;
+  --color-surface: #0F1520;
+  --color-panel: #131B27;
+  --color-border: rgba(45, 212, 191, 0.12);
+  --color-border-dim: rgba(255,255,255,0.06);
+  --color-teal: #2DD4BF;
+  --color-teal-dim: rgba(45, 212, 191, 0.15);
+  --color-teal-glow: rgba(45, 212, 191, 0.25);
+  --color-text: #E2EAF4;
+  --color-muted: #5A7090;
+  --color-dim: #2A3A50;
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html, body, #root {
+  height: 100%;
+  background-color: #0A0E14;
+  color: #E2EAF4;
+  font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(45,212,191,0.2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(45,212,191,0.4); }
+
+@keyframes sonar-sweep {
+  0% { transform: rotate(0deg); opacity: 0.9; }
+  100% { transform: rotate(360deg); opacity: 0.9; }
+}
+
+@keyframes sonar-fade {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.1; }
+  100% { opacity: 0; }
+}
+
+@keyframes ping-dot {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes pulse-teal {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(45,212,191,0.3); }
+  50% { box-shadow: 0 0 0 8px rgba(45,212,191,0); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.teal-glow { box-shadow: 0 0 20px rgba(45,212,191,0.15), 0 0 40px rgba(45,212,191,0.05); }
+.teal-text-glow { text-shadow: 0 0 12px rgba(45,212,191,0.4); }
+.animate-sonar { animation: sonar-sweep 4s linear infinite; }
+.animate-ping-dot { animation: ping-dot 1.5s ease-out infinite; }
+.animate-blink { animation: blink 2s ease-in-out infinite; }
