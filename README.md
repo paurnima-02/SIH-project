@@ -14,7 +14,11 @@ Goal: Build a computer-vision pipeline that ingests raw sonar imagery, separates
 
 
 🔍 Detection / Segmentation Model — YOLO / Faster R-CNN / U-Net based model that draws bounding boxes or pixel-level masks around man-made objects.
+
 🎯 Confidence Scoring & Noise Filtering — Pre-processing pipeline (speckle reduction, TVG correction) that suppresses false positives from natural acoustic shadows and rock clusters, and assigns a 0–100% confidence score to every detection.
+
 📍 Geotagging & Reporting Engine — Parses sonar metadata / ping headers to output structured JSON/CSV reports with lat/long, bounding dimensions, and classification for every hazard.
+
 🖥️ Dashboard UI — Upload raw sonar logs, view live AI detections overlaid on the sonar image and on a map, and download anomaly reports.
+
 ⚡ Edge-ready — Lightweight/quantized inference designed to run onboard an AUV/marine drone, not just in the cloud.
