@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+backend/venv/
+
+# Uploaded images
+backend/uploads/
+
+# Generated result images
+backend/results/
+
+# Environment variables
+.env
+
+# Jupyter
+.ipynb_checkpoints/
