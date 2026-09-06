@@ -105,8 +105,15 @@ async def predict(file: UploadFile = File(...)):
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
 
-    # Extract geotag BEFORE running detection (detection doesn't touch EXIF, but safer order)
+    # Extract geotag from EXIF
     geotag = extract_geotag(str(file_path))
+
+    # Get image dimensions (needed by frontend to convert pixel bbox -> percentage)
+    try:
+        with Image.open(file_path) as img:
+            img_width, img_height = img.size
+    except Exception:
+        img_width, img_height = None, None
 
     try:
         results = detect(str(file_path))
@@ -132,7 +139,7 @@ async def predict(file: UploadFile = File(...)):
                 "bbox": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
             })
 
-    # Build the interpretation object (this is what gets saved as JSON/CSV)
+    # Build the interpretation object (kept for the searchable log / JSON export requirement)
     interpretation = {
         "image_id": file_id,
         "geotag": geotag,
@@ -141,7 +148,6 @@ async def predict(file: UploadFile = File(...)):
         "status": "debris_detected" if len(detections) > 0 else "no_debris_detected"
     }
 
-    # Save interpretation as a JSON file too (useful for the log/report requirement)
     interpretation_filename = f"{file_id}_interpretation.json"
     interpretation_path = RESULT_DIR / interpretation_filename
     with open(interpretation_path, "w") as f:
@@ -152,7 +158,16 @@ async def predict(file: UploadFile = File(...)):
         "original_image": f"/uploads/{original_filename}",
         "annotated_image": f"/results/{result_filename}",
         "interpretation": interpretation,
-        "interpretation_file": f"/results/{interpretation_filename}"
+        "interpretation_file": f"/results/{interpretation_filename}",
+
+        # ── Top-level fields for frontend (api.ts) compatibility ──
+        "detections": detections,
+        "geotag": {
+            "lat": geotag["latitude"] if geotag else None,
+            "lng": geotag["longitude"] if geotag else None,
+        },
+        "image_width": img_width,
+        "image_height": img_height,
     }
 
 
