@@ -1,8 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
+from PIL import Image
+from PIL.ExifTags import TAGS, GPSTAGS
 import shutil
 import uuid
+import cv2
+import json
 
 from detector import detect
 
@@ -13,6 +18,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 UPLOAD_DIR = Path("uploads")
 RESULT_DIR = Path("results")
@@ -21,28 +34,60 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 RESULT_DIR.mkdir(exist_ok=True)
 
 
+def convert_to_degrees(value):
+    """Convert GPS coordinates from EXIF (degrees, minutes, seconds) to decimal degrees."""
+    d, m, s = value
+    return float(d) + (float(m) / 60.0) + (float(s) / 3600.0)
+
+
+def extract_geotag(image_path: str):
+    """Extract GPS latitude/longitude from image EXIF data, if present."""
+    try:
+        image = Image.open(image_path)
+        exif_data = image._getexif()
+
+        if not exif_data:
+            return None
+
+        gps_info = {}
+        for tag_id, value in exif_data.items():
+            tag = TAGS.get(tag_id, tag_id)
+            if tag == "GPSInfo":
+                for gps_tag_id, gps_value in value.items():
+                    gps_tag = GPSTAGS.get(gps_tag_id, gps_tag_id)
+                    gps_info[gps_tag] = gps_value
+
+        if not gps_info:
+            return None
+
+        lat = convert_to_degrees(gps_info["GPSLatitude"])
+        if gps_info.get("GPSLatitudeRef") != "N":
+            lat = -lat
+
+        lon = convert_to_degrees(gps_info["GPSLongitude"])
+        if gps_info.get("GPSLongitudeRef") != "E":
+            lon = -lon
+
+        return {"latitude": round(lat, 6), "longitude": round(lon, 6)}
+
+    except Exception:
+        return None
+
+
 @app.get("/")
 def root():
-    return {
-        "message": "Marine Debris Detection API is running"
-    }
+    return {"message": "Marine Debris Detection API is running"}
 
 
 @app.get("/health")
 def health():
-    return {
-        "status": "healthy"
-    }
+    return {"status": "healthy"}
 
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
 
-    allowed_types = {
-        "image/jpeg",
-        "image/png",
-        "image/jpg"
-    }
+    allowed_types = {"image/jpeg", "image/png", "image/jpg"}
 
     if file.content_type not in allowed_types:
         raise HTTPException(
@@ -50,72 +95,78 @@ async def predict(file: UploadFile = File(...)):
             detail="Only JPG and PNG images are allowed."
         )
 
-    # Create a unique filename
     file_id = str(uuid.uuid4())
-    file_path = UPLOAD_DIR / f"{file_id}_{file.filename}"
+    original_filename = f"{file_id}_{file.filename}"
+    file_path = UPLOAD_DIR / original_filename
 
-    # Save uploaded image
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
 
-    # Run YOLO detection
-    results = detect(str(file_path))
+    # Extract geotag BEFORE running detection (detection doesn't touch EXIF, but safer order)
+    geotag = extract_geotag(str(file_path))
+
+    try:
+        results = detect(str(file_path))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
 
     detections = []
+    result_filename = f"{file_id}_annotated.jpg"
+    result_path = RESULT_DIR / result_filename
 
     for result in results:
-
-        # Create annotated image
         annotated_image = result.plot()
-
-        result_filename = f"{file_id}_annotated.jpg"
-        result_path = RESULT_DIR / result_filename
-
-        # Save annotated image
-        import cv2
         cv2.imwrite(str(result_path), annotated_image)
 
-        # Extract detection information
-        boxes = result.boxes
-
-        for box in boxes:
-
+        for box in result.boxes:
             class_id = int(box.cls[0])
             confidence = float(box.conf[0])
-
             x1, y1, x2, y2 = box.xyxy[0].tolist()
 
             detections.append({
                 "class": result.names[class_id],
                 "confidence": round(confidence, 4),
-                "bbox": [
-                    round(x1, 2),
-                    round(y1, 2),
-                    round(x2, 2),
-                    round(y2, 2)
-                ]
+                "bbox": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
             })
+
+    # Build the interpretation object (this is what gets saved as JSON/CSV)
+    interpretation = {
+        "image_id": file_id,
+        "geotag": geotag,
+        "detection_count": len(detections),
+        "detections": detections,
+        "status": "debris_detected" if len(detections) > 0 else "no_debris_detected"
+    }
+
+    # Save interpretation as a JSON file too (useful for the log/report requirement)
+    interpretation_filename = f"{file_id}_interpretation.json"
+    interpretation_path = RESULT_DIR / interpretation_filename
+    with open(interpretation_path, "w") as f:
+        json.dump(interpretation, f, indent=2)
 
     return {
         "success": True,
-        "count": len(detections),
-        "detections": detections,
-        "annotated_image": f"/results/{result_filename}"
+        "original_image": f"/uploads/{original_filename}",
+        "annotated_image": f"/results/{result_filename}",
+        "interpretation": interpretation,
+        "interpretation_file": f"/results/{interpretation_filename}"
     }
 
 
 @app.get("/results/{filename}")
-def get_result_image(filename: str):
-
+def get_result_file(filename: str):
     file_path = RESULT_DIR / filename
-
     if not file_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="Result image not found."
-        )
+        raise HTTPException(status_code=404, detail="File not found.")
+    return FileResponse(file_path)
 
-    return FileResponse(
-        file_path,
-        media_type="image/jpeg"
-    )
+
+@app.get("/uploads/{filename}")
+def get_original_image(filename: str):
+    file_path = UPLOAD_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Original image not found.")
+    return FileResponse(file_path)
