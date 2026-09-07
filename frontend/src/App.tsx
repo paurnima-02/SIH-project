@@ -27,10 +27,12 @@ const C = {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type Screen = "home" | "upload" | "viewer" | "map" | "queue" | "compare" | "report";
+// NOTE: "mine" added so the backend's "mine" class (from the Forward-Looking Sonar
+// dataset) maps to a real type instead of falling back to "unknown" / "UK".
 type DebrisType =
   | "ghost_net" | "shipwreck" | "pipe" | "unknown"
   | "bottle" | "can" | "chain" | "drink_carton" | "hook"
-  | "propeller" | "shampoo_bottle" | "standing_bottle" | "tire" | "valve";
+  | "propeller" | "shampoo_bottle" | "standing_bottle" | "tire" | "valve" | "mine";
 type ConfTier = "high" | "medium" | "low";
 
 export interface Detection {
@@ -46,10 +48,12 @@ const TYPE_LABEL: Record<DebrisType, string> = {
   ghost_net: "Ghost Net", shipwreck: "Shipwreck", pipe: "Pipe/Cable", unknown: "Unknown",
   bottle: "Bottle", can: "Can", chain: "Chain", drink_carton: "Drink Carton", hook: "Hook",
   propeller: "Propeller", shampoo_bottle: "Shampoo Bottle", standing_bottle: "Standing Bottle", tire: "Tire", valve: "Valve",
+  mine: "Mine",
 };
 const TYPE_CODE: Record<DebrisType, string> = {
   ghost_net: "GN", shipwreck: "SW", pipe: "PC", unknown: "UK", bottle: "BOT", can: "CAN", chain: "CHN",
   drink_carton: "CRT", hook: "HOK", propeller: "PRP", shampoo_bottle: "SHB", standing_bottle: "STB", tire: "TIR", valve: "VAL",
+  mine: "MIN",
 };
 
 function tier(c: number): ConfTier { return c >= 75 ? "high" : c >= 40 ? "medium" : "low"; }
@@ -134,9 +138,9 @@ function TypeTag({ type, label }: { type: DebrisType; label?: string }) {
         fontSize: 10, fontWeight: 500, padding: "1px 5px",
         background: C.bg, color: C.navyMd,
         border: `1px solid ${C.border}`, borderRadius: 2,
-        letterSpacing: ".06em",
+        letterSpacing: ".02em", whiteSpace: "nowrap",
       }}>
-      {TYPE_CODE[type]}
+      {label || TYPE_LABEL[type]}
     </span>
   );
 }
@@ -459,7 +463,7 @@ function DetTable({ dets, compact }: { dets: Detection[]; compact?: boolean }) {
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead>
         <tr style={{ background: C.bg }}>
-          {["ID", "Type", "Conf.", "Depth", "Dimensions", "Scan", "Time"].map(h => (
+          {["ID", "Type", "Conf.", "Dimensions", "Scan", "Time"].map(h => (
             <th key={h} style={{
               padding: `4px ${compact ? 8 : 10}px`, textAlign: "left",
               fontSize: 9, fontWeight: 600, color: C.muted, letterSpacing: ".07em",
@@ -483,9 +487,6 @@ function DetTable({ dets, compact }: { dets: Detection[]; compact?: boolean }) {
             </td>
             <td style={{ padding: `${py}px ${compact ? 8 : 10}px` }}>
               <TierTag v={d.confidence} />
-            </td>
-            <td style={{ padding: `${py}px ${compact ? 8 : 10}px` }}>
-              <Mono>{d.depth} m</Mono>
             </td>
             <td style={{ padding: `${py}px ${compact ? 8 : 10}px` }}>
               <Mono color={C.muted}>{d.dimensions}</Mono>
@@ -723,7 +724,6 @@ function ViewerScreen() {
                   <div>
                     <Mono color={on ? C.blue : C.navy}>{d.id}</Mono>
                     <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-                      <Mono color={C.faint} size="9px">{d.depth}m</Mono>
                       <Mono color={C.faint} size="9px">{d.dimensions}</Mono>
                     </div>
                   </div>
@@ -741,7 +741,6 @@ function ViewerScreen() {
               {[
                 ["Type", sel.label || TYPE_LABEL[sel.type]],
                 ["Conf.", `${sel.confidence}%`],
-                ["Depth", `${sel.depth} m`],
                 ["Dim.", sel.dimensions],
                 ["Lat", `${sel.lat.toFixed(5)}°N`],
                 ["Lon", `${Math.abs(sel.lng).toFixed(5)}°W`],
@@ -783,20 +782,23 @@ function SonarCanvas({ dets, selId, onSel, showBoxes, showHeat, selDet, imageUrl
     showBoxes: boolean; showHeat: boolean; selDet?: Detection; imageUrl?: string
   }) {
   const BOX_C: Record<ConfTier, string> = { high: C.orange, medium: C.amberWarn, low: C.green };
+  const isRealImage = !!imageUrl;
 
   return (
     <div style={{ position: "absolute", inset: 0 }}>
-      {imageUrl && <img src={imageUrl} alt="Uploaded sonar scan" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", opacity: .9 }} />}
+      {imageUrl && <img src={imageUrl} alt="Uploaded sonar scan" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", opacity: 1 }} />}
       <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
         viewBox="0 0 100 100" preserveAspectRatio="none">
         <defs>
-          <linearGradient id="wf" x1="0" x2="1">
-            <stop offset="0%" stopColor="#04111E" />
-            <stop offset="42%" stopColor="#0B1E36" />
-            <stop offset="50%" stopColor="#040C14" />
-            <stop offset="58%" stopColor="#0B1E36" />
-            <stop offset="100%" stopColor="#04111E" />
-          </linearGradient>
+          {!isRealImage && (
+            <linearGradient id="wf" x1="0" x2="1">
+              <stop offset="0%" stopColor="#04111E" />
+              <stop offset="42%" stopColor="#0B1E36" />
+              <stop offset="50%" stopColor="#040C14" />
+              <stop offset="58%" stopColor="#0B1E36" />
+              <stop offset="100%" stopColor="#04111E" />
+            </linearGradient>
+          )}
           {showHeat && selDet && (
             <radialGradient id="heat"
               cx={`${selDet.x + selDet.w / 2}%`} cy={`${selDet.y + selDet.h / 2}%`} r="20%">
@@ -806,24 +808,28 @@ function SonarCanvas({ dets, selId, onSel, showBoxes, showHeat, selDet, imageUrl
             </radialGradient>
           )}
         </defs>
-        <rect width="100" height="100" fill="url(#wf)" />
-        {/* Scan line texture */}
-        {Array.from({ length: 55 }).map((_, i) => (
-          <line key={i} x1="0" y1={i * 1.84} x2="100" y2={i * 1.84}
-            stroke="#4FB6E8" strokeWidth=".055" strokeOpacity={.012 + Math.random() * .022} />
-        ))}
+
+        {!isRealImage && (
+          <>
+            <rect width="100" height="100" fill="url(#wf)" />
+            {Array.from({ length: 55 }).map((_, i) => (
+              <line key={i} x1="0" y1={i * 1.84} x2="100" y2={i * 1.84}
+                stroke="#4FB6E8" strokeWidth=".055" strokeOpacity={.012 + Math.random() * .022} />
+            ))}
+            {Array.from({ length: 32 }).map((_, i) => {
+              const x = i * 3.2, y = 72 + Math.sin(i * .85) * 5 + Math.random() * 3;
+              return <rect key={i} x={x} y={y} width="3.1" height="1.3" rx=".2"
+                fill="#4FB6E8" fillOpacity={.04 + Math.random() * .08} />;
+            })}
+            <rect x="4" y="13" width="4.5" height="8" rx=".4" fill="#4FB6E8" fillOpacity=".08" />
+            <rect x="48" y="37" width="9" height="17" rx=".4" fill="#4FB6E8" fillOpacity=".06" />
+            <rect x="70" y="56" width="3" height="20" rx=".4" fill="#4FB6E8" fillOpacity=".05" />
+          </>
+        )}
+
         {/* Nadir */}
-        <line x1="50" y1="0" x2="50" y2="100" stroke="#4FB6E8" strokeWidth=".1" strokeOpacity=".3" />
-        {/* Seabed return */}
-        {Array.from({ length: 32 }).map((_, i) => {
-          const x = i * 3.2, y = 72 + Math.sin(i * .85) * 5 + Math.random() * 3;
-          return <rect key={i} x={x} y={y} width="3.1" height="1.3" rx=".2"
-            fill="#4FB6E8" fillOpacity={.04 + Math.random() * .08} />;
-        })}
-        {/* Acoustic shadows */}
-        <rect x="4" y="13" width="4.5" height="8" rx=".4" fill="#4FB6E8" fillOpacity=".08" />
-        <rect x="48" y="37" width="9" height="17" rx=".4" fill="#4FB6E8" fillOpacity=".06" />
-        <rect x="70" y="56" width="3" height="20" rx=".4" fill="#4FB6E8" fillOpacity=".05" />
+        <line x1="50" y1="0" x2="50" y2="100" stroke="#4FB6E8" strokeWidth=".1" strokeOpacity={isRealImage ? .15 : .3} />
+
         {/* XAI heatmap */}
         {showHeat && selDet && <rect width="100" height="100" fill="url(#heat)" />}
       </svg>
@@ -848,7 +854,7 @@ function SonarCanvas({ dets, selId, onSel, showBoxes, showHeat, selDet, imageUrl
               padding: "1px 6px", borderRadius: 2, whiteSpace: "nowrap"
             }}>
               <span className="font-mono" style={{ fontSize: 9, fontWeight: 600, color: col }}>
-                {d.confidence}% {TYPE_CODE[d.type]}
+                {d.confidence}% {d.label || TYPE_LABEL[d.type]}
               </span>
             </div>
             {/* Corner marks */}
@@ -1010,7 +1016,6 @@ function MapScreen() {
                     ["ID", d.id],
                     ["Lat", `${d.lat.toFixed(5)}°N`],
                     ["Lon", `${Math.abs(d.lng).toFixed(5)}°W`],
-                    ["Depth", `${d.depth} m`],
                     ["Dim", d.dimensions],
                     ["Scan", d.scanId],
                   ].map(([k, v]) => <FieldRow key={k} label={k} value={v} mono />)}
@@ -1166,7 +1171,7 @@ function QueueScreen() {
                   <Mono color={i === idx ? C.blue : C.navy}>{d.id}</Mono>
                   <TypeTag type={d.type} label={d.label} />
                 </div>
-                <Mono color={C.faint} size="9px">{d.lat.toFixed(4)}°N · {d.depth}m</Mono>
+                <Mono color={C.faint} size="9px">{d.lat.toFixed(4)}°N</Mono>
               </div>
               <div style={{ textAlign: "right" }}>
                 <TierTag v={d.confidence} />
@@ -1267,7 +1272,6 @@ function QueueScreen() {
                     ["Type", active.label || TYPE_LABEL[active.type]],
                     ["Confidence", `${active.confidence}%`],
                     ["Tier", TIER_LABEL[tier(active.confidence)]],
-                    ["Depth", `${active.depth} m`],
                     ["Dimensions", active.dimensions],
                     ["Latitude", `${active.lat.toFixed(5)}°N`],
                     ["Longitude", `${Math.abs(active.lng).toFixed(5)}°W`],
@@ -1435,7 +1439,7 @@ function ReportScreen() {
   const { detections: DETS } = useAquaScan();
   const [fields, setFields] = useState<Record<string, boolean>>({
     id: true, type: true, confidence: true, lat: true, lng: true,
-    depth: true, dimensions: true, scanId: true, timestamp: true,
+    dimensions: true, scanId: true, timestamp: true,
   });
   const [fmt, setFmt] = useState<"CSV" | "JSON" | "GeoJSON" | "PDF">("CSV");
   const [dl, setDl] = useState(false);
@@ -1471,7 +1475,7 @@ function ReportScreen() {
   };
   const FIELD_LABELS: Record<string, string> = {
     id: "Object ID", type: "Classification", confidence: "Confidence",
-    lat: "Latitude", lng: "Longitude", depth: "Depth",
+    lat: "Latitude", lng: "Longitude",
     dimensions: "Dimensions", scanId: "Scan ID", timestamp: "Timestamp",
   };
   const COLS = Object.keys(fields).filter(k => fields[k]);
@@ -1614,7 +1618,6 @@ function ReportScreen() {
                     if (k === "confidence") return <td key={k} style={{ padding: "5px 10px" }}><TierTag v={d.confidence} /></td>;
                     if (k === "lat") display = `${d.lat.toFixed(5)}°N`;
                     if (k === "lng") display = `${Math.abs(d.lng).toFixed(5)}°W`;
-                    if (k === "depth") display = `${d.depth} m`;
                     if (k === "timestamp") display = d.timestamp.slice(0, 19).replace("T", " ");
                     const isBold = k === "id";
                     return (

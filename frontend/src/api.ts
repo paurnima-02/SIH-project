@@ -36,6 +36,7 @@ function normaliseType(value: string): Detection["type"] {
     bottle:"bottle", can:"can", chain:"chain", drink_carton:"drink_carton", hook:"hook",
     propeller:"propeller", shampoo_bottle:"shampoo_bottle", standing_bottle:"standing_bottle",
     tire:"tire", valve:"valve", ghost_net:"ghost_net", shipwreck:"shipwreck", pipe:"pipe", cable:"pipe",
+    mine:"mine",
   };
   return known[v] || "unknown";
 }
