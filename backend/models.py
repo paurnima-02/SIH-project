@@ -25,6 +25,12 @@ class Detection(Base):
         nullable=False
     )
 
+    missed_cycles = Column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
     last_seen = Column(
         DateTime,
         default=datetime.utcnow
