@@ -13,15 +13,8 @@ import cv2
 import json
 
 from detector import detect
-<<<<<<< HEAD
 from database import engine,get_db
 from models import Base,Detection
-=======
-from database import engine
-from models import Base
-from report import router as report_router, resolve_location, log_detection_record
-
->>>>>>> a6a64aff897b03951b4e69c8fb341aef873031e3
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -37,9 +30,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.include_router(report_router)
-
 
 UPLOAD_DIR = Path("uploads")
 RESULT_DIR = Path("results")
@@ -88,6 +78,23 @@ def extract_geotag(image_path: str):
         return None
 
 
+def resolve_location(geotag):
+    """Return a location object with a consistent shape for the API response."""
+    if geotag:
+        return {
+            "latitude": geotag["latitude"],
+            "longitude": geotag["longitude"],
+            "source": "exif",
+        }
+
+    # Keep the response shape stable when an image has no EXIF GPS data.
+    return {
+        "latitude": None,
+        "longitude": None,
+        "source": "dummy_fallback",
+    }
+
+
 @app.get("/")
 def root():
     return {"message": "Marine Debris Detection API is running"}
@@ -123,10 +130,7 @@ async def predict(
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
 
-<<<<<<< HEAD
-=======
     # Extract geotag from EXIF, falling back to dummy survey coordinates if missing
->>>>>>> a6a64aff897b03951b4e69c8fb341aef873031e3
     geotag = extract_geotag(str(file_path))
     location = resolve_location(geotag)  # always populated: real EXIF or dummy_fallback
 
