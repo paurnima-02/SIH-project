@@ -16,3 +16,10 @@ backend/results/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Local database
+backend/marine_debris.db
+
+# Local zip files
+backend.zip
+backend zip.zip

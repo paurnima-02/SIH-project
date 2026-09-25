@@ -10,7 +10,9 @@ import cv2
 import json
 
 from detector import detect
-
+from database import engine
+from models import Base
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Marine Debris Detection API",
