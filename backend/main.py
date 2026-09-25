@@ -13,8 +13,15 @@ import cv2
 import json
 
 from detector import detect
+<<<<<<< HEAD
 from database import engine,get_db
 from models import Base,Detection
+=======
+from database import engine
+from models import Base
+from report import router as report_router, resolve_location, log_detection_record
+
+>>>>>>> a6a64aff897b03951b4e69c8fb341aef873031e3
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -30,6 +37,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(report_router)
 
 
 UPLOAD_DIR = Path("uploads")
@@ -114,7 +123,12 @@ async def predict(
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
 
+<<<<<<< HEAD
+=======
+    # Extract geotag from EXIF, falling back to dummy survey coordinates if missing
+>>>>>>> a6a64aff897b03951b4e69c8fb341aef873031e3
     geotag = extract_geotag(str(file_path))
+    location = resolve_location(geotag)  # always populated: real EXIF or dummy_fallback
 
     try:
         with Image.open(file_path) as img:
@@ -203,6 +217,7 @@ async def predict(
     interpretation = {
         "image_id": file_id,
         "geotag": geotag,
+        "location": location,
         "detection_count": len(detections),
         "detections": detections,
         "status": "debris_detected" if len(detections) > 0 else "no_debris_detected"
@@ -212,6 +227,15 @@ async def predict(
     interpretation_path = RESULT_DIR / interpretation_filename
     with open(interpretation_path, "w") as f:
         json.dump(interpretation, f, indent=2)
+
+    # Persist this record into the report log (used by /report/csv and /report/heatmap)
+    log_detection_record(
+        image_id=file_id,
+        original_filename=file.filename,
+        status=interpretation["status"],
+        detections=detections,
+        location=location,
+    )
 
     return {
         "success": True,
@@ -223,8 +247,9 @@ async def predict(
         # ── Top-level fields for frontend (api.ts) compatibility ──
         "detections": detections,
         "geotag": {
-            "lat": geotag["latitude"] if geotag else None,
-            "lng": geotag["longitude"] if geotag else None,
+            "lat": location["latitude"],
+            "lng": location["longitude"],
+            "source": location["source"],  # "exif" or "dummy_fallback"
         },
         "image_width": img_width,
         "image_height": img_height,
