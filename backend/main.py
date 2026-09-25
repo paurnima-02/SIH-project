@@ -1,6 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends
+from sqlalchemy.orm import Session
+from typing import Optional
 from pathlib import Path
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
@@ -10,8 +13,8 @@ import cv2
 import json
 
 from detector import detect
-from database import engine
-from models import Base
+from database import engine,get_db
+from models import Base,Detection
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -87,7 +90,11 @@ def health():
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+    file: UploadFile = File(...),
+    survey_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
 
     allowed_types = {"image/jpeg", "image/png", "image/jpg"}
 
@@ -107,10 +114,8 @@ async def predict(file: UploadFile = File(...)):
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
 
-    # Extract geotag from EXIF
     geotag = extract_geotag(str(file_path))
 
-    # Get image dimensions (needed by frontend to convert pixel bbox -> percentage)
     try:
         with Image.open(file_path) as img:
             img_width, img_height = img.size
@@ -140,6 +145,59 @@ async def predict(file: UploadFile = File(...)):
                 "confidence": round(confidence, 4),
                 "bbox": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
             })
+
+    # ── save each detection into the database ──
+    db_rows = []
+    lat = geotag["latitude"] if geotag else None
+    lon = geotag["longitude"] if geotag else None
+
+    for d in detections:
+        row = Detection(
+            class_name=d["class"],
+            confidence=d["confidence"],
+            latitude=lat,
+            longitude=lon,
+            survey_id=survey_id,
+            status="NEW",
+        )
+        db.add(row)
+        db_rows.append(row)
+
+    db.commit()
+
+    for d, row in zip(detections, db_rows):
+        db.refresh(row)
+        d["id"] = row.id
+        d["status"] = row.status
+
+    interpretation = {
+        "image_id": file_id,
+        "geotag": geotag,
+        "detection_count": len(detections),
+        "detections": detections,
+        "status": "debris_detected" if len(detections) > 0 else "no_debris_detected"
+    }
+
+    interpretation_filename = f"{file_id}_interpretation.json"
+    interpretation_path = RESULT_DIR / interpretation_filename
+    with open(interpretation_path, "w") as f:
+        json.dump(interpretation, f, indent=2)
+
+    return {
+        "success": True,
+        "original_image": f"/uploads/{original_filename}",
+        "annotated_image": f"/results/{result_filename}",
+        "interpretation": interpretation,
+        "interpretation_file": f"/results/{interpretation_filename}",
+        "detections": detections,
+        "geotag": {
+            "lat": geotag["latitude"] if geotag else None,
+            "lng": geotag["longitude"] if geotag else None,
+        },
+        "image_width": img_width,
+        "image_height": img_height,
+    }
+
 
     # Build the interpretation object (kept for the searchable log / JSON export requirement)
     interpretation = {
@@ -179,6 +237,49 @@ def get_result_file(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path)
+
+def detection_to_dict(row: Detection):
+    """Serialize a Detection ORM row into a plain JSON-safe dict."""
+    return {
+        "id": row.id,
+        "class_name": row.class_name,
+        "confidence": row.confidence,
+        "latitude": row.latitude,
+        "longitude": row.longitude,
+        "dimensions": row.dimensions,
+        "survey_id": row.survey_id,
+        "status": row.status,
+        "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@app.get("/detections")
+def get_detections(
+    survey_id: Optional[str] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """List detections, newest first. Optional filters: ?survey_id=...&status=..."""
+    query = db.query(Detection)
+
+    if survey_id:
+        query = query.filter(Detection.survey_id == survey_id)
+    if status:
+        query = query.filter(Detection.status == status)
+
+    rows = query.order_by(Detection.id.desc()).all()
+    return [detection_to_dict(row) for row in rows]
+
+
+@app.get("/detections/{id}")
+def get_detection(id: int, db: Session = Depends(get_db)):
+    """Fetch a single detection by its ID."""
+    row = db.query(Detection).filter(Detection.id == id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Detection not found")
+    return detection_to_dict(row)
 
 
 @app.get("/uploads/{filename}")
