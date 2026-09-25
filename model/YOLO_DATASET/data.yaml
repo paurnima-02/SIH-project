@@ -1,11 +1,6 @@
-yaml_content = f"""path: {os.path.join(BASE_PATH, 'yolo_dataset')}
-train: images/train
-val: images/val
+# data.yaml for Shipwreck Detector
+path: AI4Shipwrecks
+train: train/images
+val: test/images
 names:
   0: shipwreck
-"""
-
-with open(os.path.join(BASE_PATH, "yolo_dataset", "data.yaml"), "w") as f:
-    f.write(yaml_content)
-
-print("data.yaml created successfully")
