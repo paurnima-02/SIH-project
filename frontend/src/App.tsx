@@ -474,17 +474,25 @@ function DetTable({ dets, compact }: { dets: Detection[]; compact?: boolean }) {
 function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
   const { setDetections, setScanImageUrl, setIsProcessing } = useAquaScan();
   const [dragging, setDragging] = useState(false);
+  const [inputType, setInputType] = useState<"image" | "xtf">("image");
   const [files, setFiles] = useState<{ file: File; name: string; size: string; format: string; status: "queued" | "running" | "done" | "error" }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (incoming: File[]) => {
-    const allowed = new Set(["png", "jpg", "jpeg"]);
+    const allowed =
+  inputType === "image"
+    ? new Set(["png", "jpg", "jpeg"])
+    : new Set(["xtf"]);
     const accepted = incoming.filter(file => allowed.has(file.name.split(".").pop()?.toLowerCase() || ""));
     if (!accepted.length) {
-      setError("Please select a sonar image: PNG, JPG or JPEG.");
-      return;
-    }
+      setError(
+  inputType === "image"
+    ? "Please select a sonar image: PNG, JPG or JPEG"
+    : "Please select a raw sonar log: XTF"
+);
+     return;
+}
     setError(null);
     setFiles(prev => [...prev, ...accepted.map(file => ({
       file, name: file.name,
@@ -531,10 +539,72 @@ function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 8, maxWidth: 1100 }}>
         <div>
           <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Data Ingest</div>
-            <div className="font-mono" style={{ fontSize: 10, color: C.muted }}>Upload sonar images for YOLO inference</div>
-          </div>
-          <Panel>
+  <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>
+    Data Ingest
+  </div>
+
+  <div className="font-mono" style={{ fontSize: 10, color: C.muted }}>
+    Upload sonar data for processing
+  </div>
+
+  <div
+    style={{
+      display: "flex",
+      gap: 8,
+      marginTop: 10,
+    }}
+  >
+    <button
+      type="button"
+      onClick={() => {
+        setInputType("image");
+        setFiles([]);
+        setError(null);
+      }}
+      style={{
+        flex: 1,
+        padding: "10px 12px",
+        borderRadius: 10,
+        cursor: "pointer",
+        border: `1px solid ${inputType === "image" ? C.blue : C.borderMd}`,
+        background: inputType === "image" ? C.blueBg : C.card,
+        color: inputType === "image" ? C.blue : C.muted,
+        fontWeight: 600,
+      }}
+    >
+      🖼 Sonar Image
+      <div className="font-mono" style={{ fontSize: 9, marginTop: 3, fontWeight: 400 }}>
+        PNG / JPG / JPEG
+      </div>
+    </button>
+
+    <button
+      type="button"
+      onClick={() => {
+        setInputType("xtf");
+        setFiles([]);
+        setError(null);
+      }}
+      style={{
+        flex: 1,
+        padding: "10px 12px",
+        borderRadius: 10,
+        cursor: "pointer",
+        border: `1px solid ${inputType === "xtf" ? C.blue : C.borderMd}`,
+        background: inputType === "xtf" ? C.blueBg : C.card,
+        color: inputType === "xtf" ? C.blue : C.muted,
+        fontWeight: 600,
+      }}
+    >
+      📡 Raw XTF Log
+      <div className="font-mono" style={{ fontSize: 9, marginTop: 3, fontWeight: 400 }}>
+        .XTF sonar log
+      </div>
+    </button>
+  </div>
+</div>
+
+<Panel>
             <div onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
               onDrop={handleDrop} onClick={() => inputRef.current?.click()}
               style={{
