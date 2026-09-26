@@ -596,7 +596,7 @@ function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
         fontWeight: 600,
       }}
     >
-      📡 Raw XTF Log
+      📡 XTF Log
       <div className="font-mono" style={{ fontSize: 9, marginTop: 3, fontWeight: 400 }}>
         .XTF sonar log
       </div>
@@ -611,12 +611,19 @@ function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
                 minHeight: 180, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, cursor: "pointer",
                 background: dragging ? C.blueBg : "transparent", border: `1px dashed ${dragging ? C.blue : C.borderMd}`, transition: "all .15s"
               }}>
-              <input ref={inputRef} type="file" multiple className="hidden" accept=".png,.jpg,.jpeg"
-                onChange={e => addFiles(Array.from(e.target.files || []))} />
-              <SonarDial size={36} />
+              <input
+  ref={inputRef}
+  type="file"
+  multiple
+  className="hidden"
+  accept={inputType === "image" ? ".png,.jpg,.jpeg" : ".xtf"}
+  onChange={e => addFiles(Array.from(e.target.files || []))}
+/>
+
+<SonarDial size={36} />
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: dragging ? C.blue : C.navyMd }}>{dragging ? "Release to add files" : "Drop sonar images here"}</div>
-                <div className="font-mono" style={{ fontSize: 10, color: C.faint, marginTop: 3 }}>.png  .jpg  .jpeg — or <span style={{ color: C.blue, textDecoration: "underline" }}>browse</span></div>
+                <div className="font-mono" style={{ fontSize: 10, color: C.faint, marginTop: 3 }}>.png  .jpg  .jpeg .XTF — or <span style={{ color: C.blue, textDecoration: "underline" }}>browse</span></div>
               </div>
             </div>
           </Panel>
