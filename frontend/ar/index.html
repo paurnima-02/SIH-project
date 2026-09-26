@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1,
+             maximum-scale=1, user-scalable=no"
+  >
+
+  <title>AquaScan — AR Field View</title>
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+
+  <!-- look-at component (needed for markers/labels to face the camera) -->
+  <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
+
+  <!-- AR.js (version-pinned so behaviour doesn't change under you) -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background: black;
+    }
+
+    #ui-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      z-index: 9999;
+      padding: 12px;
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+
+    #status-bar {
+      background: rgba(0, 0, 0, 0.78);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 15px;
+      display: inline-block;
+      max-width: 90%;
+      box-sizing: border-box;
+    }
+
+    #status-bar.error {
+      background: rgba(180, 0, 0, 0.85);
+    }
+
+    /* ----------------------------------------------
+       DETAILS PANEL (bottom sheet, shown on tap)
+       ---------------------------------------------- */
+
+    #details-panel {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 9999;
+      background: rgba(15, 15, 15, 0.94);
+      color: white;
+      border-top-left-radius: 16px;
+      border-top-right-radius: 16px;
+      padding: 18px 20px 26px;
+      box-sizing: border-box;
+      transform: translateY(100%);
+      transition: transform 0.25s ease-out;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+      pointer-events: auto;
+    }
+
+    #details-panel.open {
+      transform: translateY(0);
+    }
+
+    #details-panel .handle {
+      width: 40px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 2px;
+      margin: 0 auto 14px;
+    }
+
+    #details-panel h3 {
+      margin: 0 0 12px;
+      font-size: 17px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #details-panel .status-chip {
+      font-size: 11px;
+      padding: 2px 9px;
+      border-radius: 10px;
+      font-weight: bold;
+      color: #000;
+    }
+
+    #details-panel .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      font-size: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    #details-panel .row span:first-child {
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    #details-panel .close-btn {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 20px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+
+<body>
+
+  <!-- ==================================================
+       TOP STATUS
+       ================================================== -->
+
+  <div id="ui-overlay">
+
+    <div id="status-bar">
+      📍 Getting your location...
+    </div>
+
+  </div>
+
+
+  <!-- ==================================================
+       DETAILS PANEL
+       ================================================== -->
+
+  <div id="details-panel">
+    <button class="close-btn" onclick="closeDetailsPanel()">&times;</button>
+    <div class="handle"></div>
+
+    <h3>
+      <span id="d-class">—</span>
+      <span class="status-chip" id="d-status-chip">—</span>
+    </h3>
+
+    <div class="row"><span>Detection ID</span><span id="d-id">—</span></div>
+    <div class="row"><span>Confidence</span><span id="d-confidence">—</span></div>
+    <div class="row"><span>Latitude / Longitude</span><span id="d-latlon">—</span></div>
+    <div class="row"><span>Distance</span><span id="d-distance">—</span></div>
+    <div class="row"><span>Bearing</span><span id="d-bearing">—</span></div>
+    <div class="row"><span>Last updated</span><span id="d-timestamp">—</span></div>
+  </div>
+
+
+  <!-- ==================================================
+       AR SCENE
+       ================================================== -->
+
+  <a-scene
+    embedded
+    vr-mode-ui="enabled: false"
+    renderer="logarithmicDepthBuffer: true"
+    arjs="
+      sourceType: webcam;
+      videoTexture: true;
+      debugUIEnabled: false;
+    "
+  >
+
+    <!-- Phone camera + GPS -->
+
+    <a-camera
+      gps-new-camera="gpsMinDistance: 1"
+      rotation-reader
+    ></a-camera>
+
+
+    <!-- Detection markers will be added here -->
+
+    <a-entity id="detection-container"></a-entity>
+
+  </a-scene>
+
+
+  <!-- ==================================================
+       JAVASCRIPT
+       ================================================== -->
+
+  <script>
+
+    // ==================================================
+    // CONFIG
+    // ==================================================
+
+    // Empty string = same origin. Works because /ar is now served
+    // by the same FastAPI app (via StaticFiles mount), so this page
+    // and /detections/report share one domain — no CORS, no second
+    // ngrok tunnel needed.
+    const API_BASE = "";
+
+    const POLL_INTERVAL_MS = 5000;
+
+
+    // ==================================================
+    // ELEMENTS
+    // ==================================================
+
+    const container =
+      document.getElementById("detection-container");
+
+    const statusBar =
+      document.getElementById("status-bar");
+
+    const detailsPanel =
+      document.getElementById("details-panel");
+
+
+    // ==================================================
+    // STATE
+    // ==================================================
+
+    let userLat = null;
+    let userLon = null;
+
+    // detectionId -> { wrapper, marker, label, data }
+    let activeMarkers = new Map();
+
+
+    // ==================================================
+    // GEO HELPERS (distance + bearing for details panel)
+    // ==================================================
+
+    function toRad(deg) {
+
+      return deg * Math.PI / 180;
+
+    }
+
+
+    function toDeg(rad) {
+
+      return rad * 180 / Math.PI;
+
+    }
+
+
+    function getDistanceMeters(lat1, lon1, lat2, lon2) {
+
+      const R = 6371000;
+
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) *
+        Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) ** 2;
+
+      const c =
+        2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      return R * c;
+
+    }
+
+
+    function getBearing(lat1, lon1, lat2, lon2) {
+
+      const y =
+        Math.sin(toRad(lon2 - lon1)) *
+        Math.cos(toRad(lat2));
+
+      const x =
+        Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+        Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.cos(toRad(lon2 - lon1));
+
+      return (toDeg(Math.atan2(y, x)) + 360) % 360;
+
+    }
+
+
+    function bearingToCompass(deg) {
+
+      const dirs =
+        ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
+      return dirs[Math.round(deg / 45) % 8];
+
+    }
+
+
+    // ==================================================
+    // STATUS COLOR
+    // ==================================================
+
+    function getColor(status) {
+
+      if (
+        status === "CONFIRMED" ||
+        status === "STATIONARY"
+      ) {
+
+        return "#22c55e";
+
+      }
+
+
+      if (status === "NEW") {
+
+        return "#facc15";
+
+      }
+
+
+      if (status === "DRIFTING") {
+
+        return "#f97316";
+
+      }
+
+
+      if (status === "MISSING") {
+
+        return "#ef4444";
+
+      }
+
+
+      if (status === "RESOLVED") {
+
+        return "#3b82f6";
+
+      }
+
+
+      return "#8b5cf6";
+
+    }
+
+
+    // ==================================================
+    // FETCH DETECTIONS FROM BACKEND
+    // ==================================================
+
+    async function fetchDetections() {
+
+      try {
+
+        const res =
+          await fetch(`${API_BASE}/detections/report`, {
+            headers: { "ngrok-skip-browser-warning": "true" }
+          });
+
+        if (!res.ok) {
+
+          throw new Error(`HTTP ${res.status}`);
+
+        }
+
+        const data =
+          await res.json();
+
+        const detections =
+          data.detections || [];
+
+        syncMarkers(detections);
+
+        statusBar.classList.remove("error");
+
+        statusBar.textContent =
+          `📡 ${detections.length} detection` +
+          `${detections.length === 1 ? "" : "s"}` +
+          ` loaded — point camera around`;
+
+      } catch (err) {
+
+        console.error(
+          "Failed to fetch detections:",
+          err
+        );
+
+        statusBar.classList.add("error");
+
+        statusBar.textContent =
+          "❌ Couldn't reach backend — retrying...";
+
+        // keep existing markers on failure rather than clearing them
+
+      }
+
+    }
+
+
+    // ==================================================
+    // SYNC MARKERS (add / update / remove)
+    // ==================================================
+
+    function syncMarkers(detections) {
+
+      const seenIds = new Set();
+
+      detections.forEach(function(det) {
+
+        seenIds.add(det.detection_id);
+
+        if (activeMarkers.has(det.detection_id)) {
+
+          updateMarker(det);
+
+        } else {
+
+          renderDetection(det);
+
+        }
+
+      });
+
+
+      for (const [id, entry] of activeMarkers.entries()) {
+
+        if (!seenIds.has(id)) {
+
+          if (entry.wrapper.parentNode) {
+
+            entry.wrapper.parentNode.removeChild(entry.wrapper);
+
+          }
+
+          activeMarkers.delete(id);
+
+        }
+
+      }
+
+    }
+
+
+    // ==================================================
+    // CREATE AR MARKER
+    // ==================================================
+
+    function renderDetection(det) {
+
+      // ----------------------------------------------
+      // GPS wrapper
+      // ----------------------------------------------
+
+      const wrapper =
+        document.createElement("a-entity");
+
+
+      wrapper.setAttribute(
+        "gps-new-entity-place",
+        `latitude: ${det.latitude};
+         longitude: ${det.longitude};`
+      );
+
+
+      // ----------------------------------------------
+      // 3D sphere
+      // ----------------------------------------------
+
+      const marker =
+        document.createElement("a-sphere");
+
+
+      marker.setAttribute(
+        "radius",
+        "1.2"
+      );
+
+
+      marker.setAttribute(
+        "color",
+        getColor(det.status)
+      );
+
+
+      marker.setAttribute(
+        "opacity",
+        "0.95"
+      );
+
+
+      marker.setAttribute(
+        "material",
+        "shader: standard; transparent: true;"
+      );
+
+
+      marker.setAttribute(
+        "look-at",
+        "[gps-new-camera]"
+      );
+
+
+      marker.setAttribute(
+        "class",
+        "clickable"
+      );
+
+
+      marker.addEventListener(
+        "click",
+        function() {
+
+          showDetailsPanel(det);
+
+        }
+      );
+
+
+      wrapper.appendChild(marker);
+
+
+      // ----------------------------------------------
+      // Detection label
+      // ----------------------------------------------
+
+      const label =
+        document.createElement("a-text");
+
+
+      label.setAttribute(
+        "value",
+        `#${det.detection_id} ${det.class}\n` +
+        `${(det.confidence * 100).toFixed(0)}% • ${det.status}`
+      );
+
+
+      label.setAttribute(
+        "align",
+        "center"
+      );
+
+
+      label.setAttribute(
+        "color",
+        "#ffffff"
+      );
+
+
+      label.setAttribute(
+        "width",
+        "8"
+      );
+
+
+      label.setAttribute(
+        "scale",
+        "3 3 3"
+      );
+
+
+      label.setAttribute(
+        "position",
+        "0 2 0"
+      );
+
+
+      label.setAttribute(
+        "look-at",
+        "[gps-new-camera]"
+      );
+
+
+      wrapper.appendChild(label);
+
+
+      // ----------------------------------------------
+      // Add detection to scene + track it
+      // ----------------------------------------------
+
+      container.appendChild(wrapper);
+
+      activeMarkers.set(det.detection_id, {
+        wrapper: wrapper,
+        marker: marker,
+        label: label,
+        data: det
+      });
+
+
+      console.log(
+        "AR detection added:",
+        det
+      );
+
+    }
+
+
+    // ==================================================
+    // UPDATE EXISTING MARKER (status/color/label changed)
+    // ==================================================
+
+    function updateMarker(det) {
+
+      const entry =
+        activeMarkers.get(det.detection_id);
+
+      if (!entry) return;
+
+
+      entry.marker.setAttribute(
+        "color",
+        getColor(det.status)
+      );
+
+
+      entry.label.setAttribute(
+        "value",
+        `#${det.detection_id} ${det.class}\n` +
+        `${(det.confidence * 100).toFixed(0)}% • ${det.status}`
+      );
+
+
+      // position updates are rare, but sync in case backend corrects it
+
+      entry.wrapper.setAttribute(
+        "gps-new-entity-place",
+        `latitude: ${det.latitude};
+         longitude: ${det.longitude};`
+      );
+
+
+      entry.data = det;
+
+
+      // if the panel is open for this detection, refresh it live
+
+      if (
+        detailsPanel.classList.contains("open") &&
+        detailsPanel.dataset.detectionId === String(det.detection_id)
+      ) {
+
+        showDetailsPanel(det);
+
+      }
+
+    }
+
+
+    // ==================================================
+    // DETAILS PANEL
+    // ==================================================
+
+    function showDetailsPanel(det) {
+
+      detailsPanel.dataset.detectionId =
+        String(det.detection_id);
+
+
+      document.getElementById("d-class").textContent =
+        det.class || "Unknown";
+
+      document.getElementById("d-id").textContent =
+        det.detection_id;
+
+      document.getElementById("d-confidence").textContent =
+        det.confidence != null ?
+          `${(det.confidence * 100).toFixed(1)}%` :
+          "—";
+
+      document.getElementById("d-latlon").textContent =
+        `${det.latitude.toFixed(5)}, ${det.longitude.toFixed(5)}`;
+
+      document.getElementById("d-timestamp").textContent =
+        det.updated_at ?
+          new Date(det.updated_at).toLocaleString() :
+          "—";
+
+
+      const chip =
+        document.getElementById("d-status-chip");
+
+      chip.textContent =
+        det.status || "NEW";
+
+      chip.style.background =
+        getColor(det.status);
+
+
+      if (userLat != null && userLon != null) {
+
+        const dist =
+          getDistanceMeters(
+            userLat,
+            userLon,
+            det.latitude,
+            det.longitude
+          );
+
+        const bearing =
+          getBearing(
+            userLat,
+            userLon,
+            det.latitude,
+            det.longitude
+          );
+
+        document.getElementById("d-distance").textContent =
+          `${dist.toFixed(1)} m`;
+
+        document.getElementById("d-bearing").textContent =
+          `${bearing.toFixed(0)}° (${bearingToCompass(bearing)})`;
+
+      } else {
+
+        document.getElementById("d-distance").textContent = "—";
+        document.getElementById("d-bearing").textContent = "—";
+
+      }
+
+
+      detailsPanel.classList.add("open");
+
+    }
+
+
+    function closeDetailsPanel() {
+
+      detailsPanel.classList.remove("open");
+
+    }
+
+
+    // ==================================================
+    // START AR
+    // ==================================================
+
+    let pollHandle = null;
+
+
+    function startAR() {
+
+      // ----------------------------------------------
+      // Check GPS
+      // ----------------------------------------------
+
+      if (!navigator.geolocation) {
+
+        statusBar.textContent =
+          "❌ GPS is not supported on this device.";
+
+        statusBar.classList.add("error");
+
+        return;
+
+      }
+
+
+      statusBar.textContent =
+        "📍 Getting your location...";
+
+
+      // ----------------------------------------------
+      // Track phone location continuously
+      // (needed for live distance/bearing in the panel)
+      // ----------------------------------------------
+
+      navigator.geolocation.watchPosition(
+
+        function(position) {
+
+          userLat = position.coords.latitude;
+          userLon = position.coords.longitude;
+
+
+          console.log(
+            "User latitude:",
+            userLat
+          );
+
+
+          console.log(
+            "User longitude:",
+            userLon
+          );
+
+
+          console.log(
+            "GPS accuracy:",
+            position.coords.accuracy,
+            "meters"
+          );
+
+
+          // Start polling the backend on the first GPS fix
+
+          if (!pollHandle) {
+
+            fetchDetections();
+
+            pollHandle =
+              setInterval(
+                fetchDetections,
+                POLL_INTERVAL_MS
+              );
+
+          }
+
+        },
+
+
+        function(error) {
+
+          console.error(
+            "GPS error:",
+            error
+          );
+
+          statusBar.textContent =
+            "❌ Location permission required. Allow GPS and refresh.";
+
+          statusBar.classList.add("error");
+
+        },
+
+
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0
+        }
+
+      );
+
+    }
+
+
+    // ==================================================
+    // CAMERA PERMISSION CHECK (extra safety net)
+    // ==================================================
+
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+
+      navigator.mediaDevices
+        .getUserMedia({ video: true })
+        .catch(function(err) {
+
+          console.error("Camera error:", err);
+
+          statusBar.textContent =
+            "❌ Camera permission required. Allow camera and refresh.";
+
+          statusBar.classList.add("error");
+
+        });
+
+    }
+
+
+    // ==================================================
+    // START
+    // ==================================================
+
+    startAR();
+
+  </script>
+
+</body>
+
+</html>

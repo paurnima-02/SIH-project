@@ -1,0 +1,7 @@
+path: C:/Users/Admin/OneDrive/Desktop/SIH-project/AI4Shipwrecks/dataset
+
+train: images/train
+val: images/test
+
+names:
+  0: marine_debris

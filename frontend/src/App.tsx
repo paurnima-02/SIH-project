@@ -1,32 +1,49 @@
 import { createContext, useContext, useState, useRef, useCallback } from "react";
 import { predictImage } from "./api";
+import DebrisHeatmap from "./components/DebrisHeatmap";
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
-  bg: "#F7F9FA",
-  card: "#FFFFFF",
-  border: "#E1E7EA",
-  borderMd: "#C8D2D8",
-  borderDk: "#9AADB8",
-  navy: "#1B2226",
-  navyMd: "#2D3E47",
-  muted: "#5B6770",
-  faint: "#8FA0AA",
-  blue: "#4FB6E8",
-  blueBg: "#EDF7FD",
-  blueDim: "#BDE0F5",
-  orange: "#F4802B",
-  orangeBg: "#FEF3EC",
-  orangeDim: "#F9C49A",
-  green: "#4C9A6B",
-  greenBg: "#ECF5F0",
-  greenDim: "#A8D4BC",
-  redAlert: "#D64545",
-  amberWarn: "#B87B1A",
+  // AquaScan — Light Coastal / Glass Theme
+
+  // Main surfaces
+  bg: "#EAF6F8",
+  card: "#F7FCFD",
+
+  // Borders
+  border: "#B9D8DF",
+  borderMd: "#8FC1CC",
+  borderDk: "#5E9EAD",
+
+  // Typography
+  navy: "#123F4B",
+  navyMd: "#286878",
+  muted: "#5F8995",
+  faint: "#8BAAB3",
+
+  // Primary interactive colour
+  blue: "#287E91",
+  blueBg: "#D7EDF2",
+  blueDim: "#73B4C1",
+
+  // High confidence / important
+  orange: "#F28A4B",
+  orangeBg: "#FFF0E6",
+  orangeDim: "#F6B17E",
+
+  // Success
+  green: "#2EA66D",
+  greenBg: "#E3F6EC",
+  greenDim: "#73C69A",
+
+  // Alerts
+  redAlert: "#DF6670",
+  amberWarn: "#D99A32",
 };
 
+
 // ─── Types ─────────────────────────────────────────────────────────────────────
-type Screen = "home" | "survey" | "upload" | "viewer" | "report";
+type Screen = "home" | "survey" | "upload" | "viewer" | "heatmap" | "spatial" | "report";
 // NOTE: "mine" added so the backend's "mine" class (from the Forward-Looking Sonar
 // dataset) maps to a real type instead of falling back to "unknown" / "UK".
 type DebrisType =
@@ -188,16 +205,28 @@ const NAV_ITEMS: { id: Screen; label: string; code: string; badge?: number }[] =
   { id: "survey", label: "Survey", code: "01" },
   { id: "upload", label: "Ingest", code: "02" },
   { id: "viewer", label: "Det. Viewer", code: "03" },
-  { id: "report", label: "Export", code: "04" },
+  { id: "heatmap", label: "Heatmap", code: "04" },
+  { id: "spatial", label: "Spatial View", code: "05" },
+  { id: "report", label: "Export", code: "06" },
 ];
 
 function Sidebar({ active, onNav }: { active: Screen; onNav: (s: Screen) => void }) {
   const { isProcessing } = useAquaScan();
   return (
     <aside style={{
-      width: 176, flexShrink: 0, display: "flex", flexDirection: "column",
-      background: C.card, borderRight: `1px solid ${C.border}`,
-    }}>
+  width: 176,
+  flexShrink: 0,
+  display: "flex",
+  flexDirection: "column",
+
+  background: "rgba(240, 249, 251, 0.62)",
+  borderRight: "1px solid rgba(255, 255, 255, 0.55)",
+
+  backdropFilter: "blur(18px)",
+  WebkitBackdropFilter: "blur(18px)",
+
+  boxShadow: "6px 0 24px rgba(18, 63, 80, 0.10)",
+}}>
       {/* Instrument header */}
       <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -282,7 +311,18 @@ function SonarDial({ size = 24 }: { size?: number }) {
 // ─── Panel wrappers ───────────────────────────────────────────────────────────
 function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, ...style }}>
+    <div
+      style={{
+        background: "rgba(245, 252, 253, 0.68)",
+        border: "1px solid rgba(255, 255, 255, 0.55)",
+        borderRadius: 16,
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        boxShadow: "0 8px 28px rgba(18, 63, 80, 0.12)",
+        overflow: "hidden",
+        ...style,
+      }}
+    >
       {children}
     </div>
   );
@@ -434,17 +474,25 @@ function DetTable({ dets, compact }: { dets: Detection[]; compact?: boolean }) {
 function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
   const { setDetections, setScanImageUrl, setIsProcessing } = useAquaScan();
   const [dragging, setDragging] = useState(false);
+  const [inputType, setInputType] = useState<"image" | "xtf">("image");
   const [files, setFiles] = useState<{ file: File; name: string; size: string; format: string; status: "queued" | "running" | "done" | "error" }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (incoming: File[]) => {
-    const allowed = new Set(["png", "jpg", "jpeg"]);
+    const allowed =
+  inputType === "image"
+    ? new Set(["png", "jpg", "jpeg"])
+    : new Set(["xtf"]);
     const accepted = incoming.filter(file => allowed.has(file.name.split(".").pop()?.toLowerCase() || ""));
     if (!accepted.length) {
-      setError("Please select a sonar image: PNG, JPG or JPEG.");
-      return;
-    }
+      setError(
+  inputType === "image"
+    ? "Please select a sonar image: PNG, JPG or JPEG"
+    : "Please select a raw sonar log: XTF"
+);
+     return;
+}
     setError(null);
     setFiles(prev => [...prev, ...accepted.map(file => ({
       file, name: file.name,
@@ -491,10 +539,72 @@ function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 8, maxWidth: 1100 }}>
         <div>
           <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Data Ingest</div>
-            <div className="font-mono" style={{ fontSize: 10, color: C.muted }}>Upload sonar images for YOLO inference</div>
-          </div>
-          <Panel>
+  <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>
+    Data Ingest
+  </div>
+
+  <div className="font-mono" style={{ fontSize: 10, color: C.muted }}>
+    Upload sonar data for processing
+  </div>
+
+  <div
+    style={{
+      display: "flex",
+      gap: 8,
+      marginTop: 10,
+    }}
+  >
+    <button
+      type="button"
+      onClick={() => {
+        setInputType("image");
+        setFiles([]);
+        setError(null);
+      }}
+      style={{
+        flex: 1,
+        padding: "10px 12px",
+        borderRadius: 10,
+        cursor: "pointer",
+        border: `1px solid ${inputType === "image" ? C.blue : C.borderMd}`,
+        background: inputType === "image" ? C.blueBg : C.card,
+        color: inputType === "image" ? C.blue : C.muted,
+        fontWeight: 600,
+      }}
+    >
+      🖼 Sonar Image
+      <div className="font-mono" style={{ fontSize: 9, marginTop: 3, fontWeight: 400 }}>
+        PNG / JPG / JPEG
+      </div>
+    </button>
+
+    <button
+      type="button"
+      onClick={() => {
+        setInputType("xtf");
+        setFiles([]);
+        setError(null);
+      }}
+      style={{
+        flex: 1,
+        padding: "10px 12px",
+        borderRadius: 10,
+        cursor: "pointer",
+        border: `1px solid ${inputType === "xtf" ? C.blue : C.borderMd}`,
+        background: inputType === "xtf" ? C.blueBg : C.card,
+        color: inputType === "xtf" ? C.blue : C.muted,
+        fontWeight: 600,
+      }}
+    >
+      📡 Raw XTF Log
+      <div className="font-mono" style={{ fontSize: 9, marginTop: 3, fontWeight: 400 }}>
+        .XTF sonar log
+      </div>
+    </button>
+  </div>
+</div>
+
+<Panel>
             <div onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
               onDrop={handleDrop} onClick={() => inputRef.current?.click()}
               style={{
@@ -847,7 +957,7 @@ function SonarCanvas({ dets, selId, onSel, showBoxes, imageUrl }:
   );
 }
 
-
+// ─── 4. REPORT / EXPORT ────────────────────────────────────────────────────────
 function ReportScreen() {
   const { detections: DETS } = useAquaScan();
   const [fields, setFields] = useState<Record<string, boolean>>({
@@ -858,39 +968,130 @@ function ReportScreen() {
   const [dl, setDl] = useState(false);
   const [sortKey, setSort] = useState("confidence");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  const [scope, setScope] = useState<"all" | "high" | "reviewed">("all");
 
-  const sorted = [...DETS].sort((a, b) => {
+  // Real counts, not hardcoded strings
+  const highCount = DETS.filter(d => tier(d.confidence) === "high").length;
+  const reviewedCount = 0; // wire this up once you have a review/confirm flow
+
+  const scoped = DETS.filter(d => {
+    if (scope === "high") return tier(d.confidence) === "high";
+    if (scope === "reviewed") return false; // no review flow yet
+    return true;
+  });
+
+  const sorted = [...scoped].sort((a, b) => {
     const av = (a as any)[sortKey], bv = (b as any)[sortKey];
     return (typeof av === "number" ? av - bv : String(av).localeCompare(String(bv))) * sortDir;
   });
 
   const doSort = (k: string) => { if (k === sortKey) setSortDir(d => d === 1 ? -1 : 1); else { setSort(k); setSortDir(-1); } };
-  const download = () => {
-    setDl(true);
-    const headers = COLS.map(k => FIELD_LABELS[k]);
-    const rows = sorted.map(d => COLS.map(k => (d as any)[k]));
 
-    if (fmt === "CSV") {
-      const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = "detections.csv"; a.click();
-    } else if (fmt === "JSON") {
-      const json = JSON.stringify(sorted, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = "detections.json"; a.click();
-    }
-
-    setTimeout(() => setDl(false), 800);
-  };
   const FIELD_LABELS: Record<string, string> = {
     id: "Object ID", type: "Classification", confidence: "Confidence",
     scanId: "Scan ID", timestamp: "Timestamp",
   };
   const COLS = Object.keys(fields).filter(k => fields[k]);
+
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const buildGeoJSON = () => {
+    return {
+      type: "FeatureCollection",
+      features: sorted.map(d => ({
+        type: "Feature",
+        geometry: d.latitude != null && d.longitude != null
+          ? { type: "Point", coordinates: [d.longitude, d.latitude] }
+          : null,
+        properties: {
+          id: d.id,
+          type: d.label || TYPE_LABEL[d.type],
+          confidence: d.confidence,
+          scanId: d.scanId,
+          timestamp: d.timestamp,
+        },
+      })),
+    };
+  };
+
+  const buildPrintableReportHtml = () => {
+    const rows = sorted.map(d => `
+      <tr>
+        <td>${d.id}</td>
+        <td>${d.label || TYPE_LABEL[d.type]}</td>
+        <td>${d.confidence}%</td>
+        <td>${d.scanId}</td>
+        <td>${d.latitude != null ? d.latitude.toFixed(6) : "N/A"}</td>
+        <td>${d.longitude != null ? d.longitude.toFixed(6) : "N/A"}</td>
+        <td>${d.timestamp.slice(0, 19).replace("T", " ")}</td>
+      </tr>`).join("");
+
+    return `
+      <html>
+        <head>
+          <title>AquaScan Detection Report</title>
+          <style>
+            body { font-family: -apple-system, Arial, sans-serif; padding: 24px; color: #1B2226; }
+            h1 { font-size: 18px; }
+            .meta { color: #5B6770; font-size: 12px; margin-bottom: 16px; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            th, td { border: 1px solid #E1E7EA; padding: 6px 8px; text-align: left; }
+            th { background: #F7F9FA; text-transform: uppercase; font-size: 9px; letter-spacing: .05em; }
+          </style>
+        </head>
+        <body>
+          <h1>AquaScan Marine Debris Detection Report</h1>
+          <div class="meta">
+            Generated ${new Date().toLocaleString()} &middot; ${sorted.length} detection(s) &middot; scope: ${scope}
+          </div>
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Type</th><th>Confidence</th><th>Scan</th><th>Latitude</th><th>Longitude</th><th>Timestamp</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </body>
+      </html>`;
+  };
+
+  const download = () => {
+    setDl(true);
+
+    if (fmt === "CSV") {
+      const headers = COLS.map(k => FIELD_LABELS[k]);
+      const rows = sorted.map(d => COLS.map(k => (d as any)[k]));
+      const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
+      triggerDownload(new Blob([csv], { type: "text/csv" }), "detections.csv");
+
+    } else if (fmt === "JSON") {
+      const json = JSON.stringify(sorted, null, 2);
+      triggerDownload(new Blob([json], { type: "application/json" }), "detections.json");
+
+    } else if (fmt === "GeoJSON") {
+      const geojson = JSON.stringify(buildGeoJSON(), null, 2);
+      triggerDownload(new Blob([geojson], { type: "application/geo+json" }), "detections.geojson");
+
+    } else if (fmt === "PDF") {
+      // No PDF library dependency needed -- opens a print-styled window;
+      // the user picks "Save as PDF" in their browser's print dialog.
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(buildPrintableReportHtml());
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => printWindow.print(), 250);
+      }
+    }
+
+    setTimeout(() => setDl(false), 800);
+  };
 
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -942,16 +1143,17 @@ function ReportScreen() {
           <div style={{ marginBottom: 10 }}>
             <Label caps>Filter scope</Label>
             <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
-              {[
-                ["all", "All detections (8)"],
-                ["high", "High-confidence only (4)"],
-                ["reviewed", "Analyst-reviewed (0)"],
-              ].map(([k, l]) => (
+              {([
+                ["all", `All detections (${DETS.length})`],
+                ["high", `High-confidence only (${highCount})`],
+                ["reviewed", `Analyst-reviewed (${reviewedCount})`],
+              ] as const).map(([k, l]) => (
                 <label key={k} style={{
                   display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
                   padding: "3px 0"
                 }}>
-                  <input type="radio" name="scope" defaultChecked={k === "all"}
+                  <input type="radio" name="scope" checked={scope === k}
+                    onChange={() => setScope(k as typeof scope)}
                     style={{ accentColor: C.blue }} />
                   <span style={{ fontSize: 11, color: C.muted }}>{l}</span>
                 </label>
@@ -962,18 +1164,19 @@ function ReportScreen() {
           <div>
             <Label caps>Session metadata</Label>
             <div style={{ marginTop: 6 }}>
-              <FieldRow label="Detections" value={String(DETS.length)} mono />
+              <FieldRow label="Detections" value={String(sorted.length)} mono />
               <FieldRow label="Source" value={DETS[0]?.scanId || "No scan loaded"} mono />
             </div>
           </div>
         </div>
 
         <div style={{ borderTop: `1px solid ${C.border}`, padding: "8px 10px" }}>
-          <button onClick={download}
+          <button onClick={download} disabled={sorted.length === 0}
             style={{
               width: "100%", background: dl ? C.blueBg : C.blue, color: dl ? C.blue : "#fff",
               border: `1px solid ${C.blue}`, borderRadius: 2, padding: "6px",
-              fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all .15s",
+              fontSize: 12, fontWeight: 500, cursor: sorted.length === 0 ? "not-allowed" : "pointer",
+              opacity: sorted.length === 0 ? 0.5 : 1, transition: "all .15s",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             }}>
             {dl ? (
@@ -991,7 +1194,7 @@ function ReportScreen() {
 
       {/* Preview table */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <PanelHead title="Preview" sub={`${DETS.length} records · ${COLS.length} fields`}
+        <PanelHead title="Preview" sub={`${sorted.length} records · ${COLS.length} fields · scope: ${scope}`}
           right={
             <span className="font-mono" style={{ fontSize: 9, color: C.faint }}>
               {fmt} preview
@@ -1042,6 +1245,40 @@ function ReportScreen() {
   );
 }
 
+
+// ─── Spatial View ──────────────────────────────────────────────────────────────
+function SpatialViewScreen() {
+  const [tab, setTab] = useState<"3d" | "ar">("3d");
+  const tabStyle = (on: boolean): React.CSSProperties => ({
+    border: `1px solid ${on ? C.navyMd : C.borderMd}`,
+    background: on ? C.navyMd : C.card,
+    color: on ? C.bg : C.muted,
+    padding: "7px 12px", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 600,
+  });
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: 18, background: "transparent" }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+        <div className="font-mono" style={{ fontSize: 9, color: C.muted, letterSpacing: ".12em" }}>SPATIAL INTELLIGENCE</div>
+        <h1 style={{ margin: "6px 0 4px", fontSize: 25, color: C.navy }}>Spatial View</h1>
+        <p style={{ margin: 0, color: C.muted, fontSize: 12 }}>Explore mapped detections spatially. AR remains a preview until the camera/GPS module is connected.</p>
+        <div style={{ display: "flex", gap: 6, margin: "16px 0 10px" }}>
+          <button onClick={() => setTab("3d")} style={tabStyle(tab === "3d")}>3D View</button>
+          <button onClick={() => setTab("ar")} style={tabStyle(tab === "ar")}>AR Preview</button>
+        </div>
+        <div style={{ minHeight: 560, position: "relative", overflow: "hidden", borderRadius: 14, border: `1px solid ${C.border}`, background: C.card }}>
+          <div style={{ position: "absolute", inset: 0, background: `linear-gradient(180deg, ${C.card}, ${C.blueBg})` }} />
+          {tab === "3d" ? <>
+            <div style={{ position: "absolute", inset: "18% 8% 0", opacity: .5, transform: "perspective(620px) rotateX(58deg)", transformOrigin: "bottom", backgroundImage: `linear-gradient(${C.borderMd} 1px, transparent 1px),linear-gradient(90deg, ${C.borderMd} 1px, transparent 1px)`, backgroundSize: "48px 48px" }} />
+            {[['31%','53%','Bottle','CONFIRMED'],['56%','66%','Ghost Net','DRIFTING'],['76%','58%','Tire','STATIONARY']].map(([x,y,name,status]) => <div key={name} style={{ position:'absolute', left:x, top:y, transform:'translate(-50%,-50%)' }}><div style={{ background:C.card, border:`1px solid ${C.borderMd}`, borderRadius:9, padding:'7px 10px', boxShadow:'0 5px 18px rgba(29,53,57,.10)' }}><b style={{fontSize:11,color:C.navy}}>{name}</b><div className="font-mono" style={{fontSize:8,color:C.muted,marginTop:2}}>{status}</div></div><div style={{width:12,height:12,borderRadius:'50%',background:C.navyMd,border:`3px solid ${C.card}`,margin:'5px auto 0'}} /></div>)}
+            <div style={{ position:'absolute', left:'50%', top:38, transform:'translateX(-50%)', textAlign:'center', color:C.navyMd }}><SonarDial size={34}/><div className="font-mono" style={{fontSize:8,marginTop:5}}>SURVEY VESSEL</div></div>
+          </> : <div style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:'min(440px,80%)', textAlign:'center' }}><div style={{width:64,height:64,borderRadius:18,border:`1px solid ${C.borderMd}`,display:'grid',placeItems:'center',margin:'0 auto 14px',fontSize:25,color:C.navyMd}}>AR</div><h2 style={{color:C.navy,margin:'0 0 8px'}}>AR Preview</h2><p style={{color:C.muted,lineHeight:1.6,fontSize:12}}>Camera + GPS detection overlays will appear here when the AR module is connected. This is intentionally a frontend preview, not a simulated live feed.</p></div>}
+          <div style={{position:'absolute',right:14,top:14,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',color:C.muted,fontSize:10}}><b style={{color:C.navy}}>Layers</b><div style={{marginTop:6}}>✓ Survey path</div><div>✓ Detections</div><div>✓ Labels</div><div>○ Depth grid</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Shell ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
@@ -1054,17 +1291,20 @@ export default function App() {
   };
 
   return (
-    <AquaScanContext.Provider value={contextValue}>
-      <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", background: C.bg }}>
-        <Sidebar active={screen} onNav={setScreen} />
-        <main style={{ flex: 1, display: "flex", minWidth: 0, overflow: "hidden" }}>
-          {screen === "home" && <HomeScreen onNav={setScreen} />}
-          {screen === "survey" && <SurveyScreen />}
-          {screen === "upload" && <UploadScreen onNav={setScreen} />}
-          {screen === "viewer" && <ViewerScreen />}
-          {screen === "report" && <ReportScreen />}
-        </main>
-      </div>
-    </AquaScanContext.Provider>
-  );
+  <AquaScanContext.Provider value={contextValue}>
+    <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", background: "transparent" }}>
+      <Sidebar active={screen} onNav={setScreen} />
+
+      <main style={{ flex: 1, display: "flex", minWidth: 0, overflow: "hidden" }}>
+        {screen === "home" && <HomeScreen onNav={setScreen} />}
+        {screen === "survey" && <SurveyScreen />}
+        {screen === "upload" && <UploadScreen onNav={setScreen} />}
+        {screen === "viewer" && <ViewerScreen />}
+        {screen === "heatmap" && <DebrisHeatmap />}
+        {screen === "spatial" && <SpatialViewScreen />}
+        {screen === "report" && <ReportScreen />}
+      </main>
+    </div>
+  </AquaScanContext.Provider>
+);
 }

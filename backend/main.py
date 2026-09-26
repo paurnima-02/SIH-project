@@ -1,16 +1,17 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from pathlib import Path
 from PIL import Image
-from PIL.ExifTags import TAGS, GPSTAGS
 
 import shutil
 import uuid
 import cv2
 import json
 import math
+import sys
 
 from datetime import datetime, timedelta
 
@@ -19,9 +20,33 @@ from pydantic import BaseModel
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+
+# =========================================================
+# PROJECT PATH
+# =========================================================
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+BACKEND_DIR = Path(__file__).resolve().parent
+
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+
+# =========================================================
+# IMPORTS
+# =========================================================
+
 from detector import detect
+from data_pipeline.xtf_to_waterfall import process_xtf_to_waterfall
+
 from database import engine, get_db
 from models import Base, Detection
+
+from geotag_utils import resolve_geotag
 
 
 # =========================================================
@@ -66,7 +91,11 @@ class ResolveRequest(BaseModel):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8443",
+        "http://127.0.0.1:8443",
+        "*"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -74,90 +103,27 @@ app.add_middleware(
 
 
 # =========================================================
+# AR FRONTEND (static files)
+# =========================================================
+# Serves frontend/ar/index.html at /ar/ so it shares the same
+# origin (and the same ngrok tunnel) as the API itself.
+
+app.mount(
+    "/ar",
+    StaticFiles(directory="../frontend/ar", html=True),
+    name="ar"
+)
+
+
+# =========================================================
 # DIRECTORIES
 # =========================================================
 
-UPLOAD_DIR = Path("uploads")
-RESULT_DIR = Path("results")
+UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
+RESULT_DIR = Path(__file__).resolve().parent / "results"
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULT_DIR.mkdir(exist_ok=True)
-
-
-# =========================================================
-# GPS UTILITIES
-# =========================================================
-
-def convert_to_degrees(value):
-    """Convert GPS coordinates from EXIF to decimal degrees."""
-
-    d, m, s = value
-
-    return (
-        float(d)
-        + (float(m) / 60.0)
-        + (float(s) / 3600.0)
-    )
-
-
-def extract_geotag(image_path: str):
-    """Extract GPS latitude/longitude from image EXIF data."""
-
-    try:
-        image = Image.open(image_path)
-
-        exif_data = image._getexif()
-
-        if not exif_data:
-            return None
-
-        gps_info = {}
-
-        for tag_id, value in exif_data.items():
-
-            tag = TAGS.get(tag_id, tag_id)
-
-            if tag == "GPSInfo":
-
-                for gps_tag_id, gps_value in value.items():
-
-                    gps_tag = GPSTAGS.get(
-                        gps_tag_id,
-                        gps_tag_id
-                    )
-
-                    gps_info[gps_tag] = gps_value
-
-        if not gps_info:
-            return None
-
-        if "GPSLatitude" not in gps_info:
-            return None
-
-        if "GPSLongitude" not in gps_info:
-            return None
-
-        lat = convert_to_degrees(
-            gps_info["GPSLatitude"]
-        )
-
-        if gps_info.get("GPSLatitudeRef") != "N":
-            lat = -lat
-
-        lon = convert_to_degrees(
-            gps_info["GPSLongitude"]
-        )
-
-        if gps_info.get("GPSLongitudeRef") != "E":
-            lon = -lon
-
-        return {
-            "latitude": round(lat, 6),
-            "longitude": round(lon, 6)
-        }
-
-    except Exception:
-        return None
 
 
 # =========================================================
@@ -180,13 +146,8 @@ def calculate_distance_and_bearing(
     lat1_rad = math.radians(lat1)
     lat2_rad = math.radians(lat2)
 
-    delta_lat = math.radians(
-        lat2 - lat1
-    )
-
-    delta_lon = math.radians(
-        lon2 - lon1
-    )
+    delta_lat = math.radians(lat2 - lat1)
+    delta_lon = math.radians(lon2 - lon1)
 
     # Haversine distance
 
@@ -236,12 +197,6 @@ def calculate_distance_and_bearing(
 
 MISSING_AFTER_CYCLES = 3
 
-# Prototype:
-# One scheduler run represents one monitoring cycle.
-#
-# For testing, this is 60 seconds.
-# Later, this can be changed to match the actual survey cycle.
-
 SURVEY_CYCLE_SECONDS = 60
 
 
@@ -249,13 +204,7 @@ def check_missing_detections():
     """
     Check active detections for consecutive missed cycles.
 
-    If a detection has not been seen for one cycle:
-        missed_cycles = 1
-
-    If it is missed again:
-        missed_cycles = 2
-
-    After 3 consecutive missed cycles:
+    After 3 missed cycles:
         status = MISSING
     """
 
@@ -282,7 +231,6 @@ def check_missing_detections():
                 now - detection.last_seen
             )
 
-            # One survey cycle has passed
             if time_since_seen >= timedelta(
                 seconds=SURVEY_CYCLE_SECONDS
             ):
@@ -295,7 +243,6 @@ def check_missing_detections():
                     f"{detection.missed_cycles}"
                 )
 
-                # Mark missing after 3 cycles
                 if (
                     detection.missed_cycles
                     >= MISSING_AFTER_CYCLES
@@ -647,11 +594,6 @@ def mark_detection_seen(
 
     detection.last_seen = datetime.utcnow()
 
-    # Do not automatically change MISSING
-    # back to CONFIRMED.
-    #
-    # The lifecycle status remains unchanged.
-
     detection.updated_at = datetime.utcnow()
 
     db.commit()
@@ -840,7 +782,7 @@ def get_detection_report(
 
 
 # =========================================================
-# PREDICTION API
+# NORMAL IMAGE PREDICTION API
 # =========================================================
 
 @app.post("/predict")
@@ -888,17 +830,25 @@ async def predict(
             detail="Failed to save uploaded file."
         )
 
-    # -----------------------------------------------------
-    # Extract geotag
-    # -----------------------------------------------------
+    # =====================================================
+    # GEOTAG
+    # =====================================================
 
-    geotag = extract_geotag(
-        str(file_path)
+    geotag_result = resolve_geotag(
+        file_path=str(file_path),
+        filename=file.filename
     )
 
-    # -----------------------------------------------------
-    # Get image dimensions
-    # -----------------------------------------------------
+    geotag = {
+        "latitude": geotag_result["latitude"],
+        "longitude": geotag_result["longitude"]
+    }
+
+    geotag_source = geotag_result["source"]
+
+    # =====================================================
+    # IMAGE DIMENSIONS
+    # =====================================================
 
     try:
 
@@ -911,9 +861,9 @@ async def predict(
         img_width = None
         img_height = None
 
-    # -----------------------------------------------------
-    # YOLO detection
-    # -----------------------------------------------------
+    # =====================================================
+    # YOLO DETECTION
+    # =====================================================
 
     try:
 
@@ -982,27 +932,15 @@ async def predict(
                 2
             )
 
-            # -------------------------------------------------
-            # Save detection in database
-            # -------------------------------------------------
-
             db_detection = Detection(
 
                 class_name=class_name,
 
                 confidence=confidence_value,
 
-                latitude=(
-                    geotag["latitude"]
-                    if geotag
-                    else None
-                ),
+                latitude=geotag["latitude"],
 
-                longitude=(
-                    geotag["longitude"]
-                    if geotag
-                    else None
-                ),
+                longitude=geotag["longitude"],
 
                 dimensions=(
                     f"{bbox_width} x "
@@ -1052,9 +990,9 @@ async def predict(
                     db_detection.status
             })
 
-    # -----------------------------------------------------
-    # Commit database
-    # -----------------------------------------------------
+    # =====================================================
+    # COMMIT DATABASE
+    # =====================================================
 
     try:
 
@@ -1072,9 +1010,9 @@ async def predict(
             )
         )
 
-    # -----------------------------------------------------
-    # Interpretation
-    # -----------------------------------------------------
+    # =====================================================
+    # INTERPRETATION
+    # =====================================================
 
     interpretation = {
 
@@ -1083,6 +1021,9 @@ async def predict(
 
         "geotag":
             geotag,
+
+        "geotag_source":
+            geotag_source,
 
         "detection_count":
             len(detections),
@@ -1122,9 +1063,9 @@ async def predict(
             indent=2
         )
 
-    # -----------------------------------------------------
-    # API response
-    # -----------------------------------------------------
+    # =====================================================
+    # API RESPONSE
+    # =====================================================
 
     return {
 
@@ -1152,21 +1093,460 @@ async def predict(
         "geotag": {
 
             "lat":
-                geotag["latitude"]
-                if geotag
-                else None,
+                geotag["latitude"],
 
             "lng":
                 geotag["longitude"]
-                if geotag
-                else None
         },
+
+        "geotag_source":
+            geotag_source,
 
         "image_width":
             img_width,
 
         "image_height":
             img_height
+    }
+
+
+# =========================================================
+# XTF PREDICTION API
+# =========================================================
+
+@app.post("/predict-xtf")
+async def predict_xtf(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+
+    # =====================================================
+    # CHECK FILE
+    # =====================================================
+
+    if not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="XTF file is required."
+        )
+
+    if not file.filename.lower().endswith(".xtf"):
+
+        raise HTTPException(
+            status_code=400,
+            detail="Only XTF files are allowed."
+        )
+
+    # =====================================================
+    # SAVE XTF
+    # =====================================================
+
+    file_id = str(uuid.uuid4())
+
+    xtf_filename = (
+        f"{file_id}_{file.filename}"
+    )
+
+    xtf_path = (
+        UPLOAD_DIR / xtf_filename
+    )
+
+    try:
+
+        with open(
+            xtf_path,
+            "wb"
+        ) as buffer:
+
+            shutil.copyfileobj(
+                file.file,
+                buffer
+            )
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to save XTF file: {str(e)}"
+            )
+        )
+
+    # =====================================================
+    # XTF -> WATERFALL
+    # =====================================================
+
+    try:
+
+        waterfall_result = (
+            process_xtf_to_waterfall(
+
+                file_path=str(xtf_path),
+
+                output_prefix=file_id,
+
+                output_dir=str(RESULT_DIR)
+            )
+        )
+
+        print(
+            "[XTF] Pipeline return type:",
+            type(waterfall_result)
+        )
+
+        print(
+            "[XTF] Pipeline return:",
+            waterfall_result
+        )
+
+        # -------------------------------------------------
+        # Handle expected tuple:
+        # (waterfall_path, nav_df)
+        # -------------------------------------------------
+
+        if not isinstance(
+            waterfall_result,
+            tuple
+        ):
+
+            raise ValueError(
+                "XTF pipeline did not return "
+                "(waterfall_path, nav_df)."
+            )
+
+        if len(waterfall_result) != 2:
+
+            raise ValueError(
+                "XTF pipeline returned an unexpected "
+                "number of values."
+            )
+
+        waterfall_path, nav_df = waterfall_result
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"XTF processing failed: {str(e)}"
+            )
+        )
+
+    # =====================================================
+    # MAKE SURE WATERFALL PATH IS REALLY A FILE PATH
+    # =====================================================
+
+    print(
+        "[XTF] Waterfall type:",
+        type(waterfall_path)
+    )
+
+    print(
+        "[XTF] Waterfall path:",
+        waterfall_path
+    )
+
+    # If pipeline returned a NumPy image instead of path,
+    # save it ourselves.
+
+    if not isinstance(
+        waterfall_path,
+        (str, Path)
+    ):
+
+        try:
+
+            waterfall_image = waterfall_path
+
+            waterfall_path = (
+                RESULT_DIR /
+                f"{file_id}_waterfall.png"
+            )
+
+            cv2.imwrite(
+                str(waterfall_path),
+                waterfall_image
+            )
+
+            print(
+                "[XTF] Saved returned image to:",
+                waterfall_path
+            )
+
+        except Exception as e:
+
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "XTF pipeline returned an image "
+                    f"but it could not be saved: {str(e)}"
+                )
+            )
+
+    else:
+
+        waterfall_path = Path(
+            waterfall_path
+        )
+
+    # =====================================================
+    # CHECK WATERFALL EXISTS
+    # =====================================================
+
+    if not waterfall_path.exists():
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Waterfall image was not created: "
+                f"{waterfall_path}"
+            )
+        )
+
+    print(
+        "[XTF] Waterfall exists:",
+        waterfall_path
+    )
+
+    # =====================================================
+    # YOLO DETECTION
+    # =====================================================
+
+    try:
+
+        # IMPORTANT:
+        # YOLO receives the FILE PATH,
+        # not the NumPy image array.
+
+        results = detect(
+            str(waterfall_path)
+        )
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Detection failed: {str(e)}"
+            )
+        )
+
+    # =====================================================
+    # PROCESS DETECTIONS
+    # =====================================================
+
+    detections = []
+
+    saved_detection_ids = []
+
+    result_filename = (
+        f"{file_id}_annotated.jpg"
+    )
+
+    result_path = (
+        RESULT_DIR /
+        result_filename
+    )
+
+    # =====================================================
+    # SURVEY GPS
+    # =====================================================
+
+    latitude = None
+    longitude = None
+
+    if nav_df is not None:
+
+        if not nav_df.empty:
+
+            latitude = float(
+                nav_df.iloc[0]["lat"]
+            )
+
+            longitude = float(
+                nav_df.iloc[0]["lon"]
+            )
+
+    # =====================================================
+    # YOLO RESULTS
+    # =====================================================
+
+    for result in results:
+
+        annotated_image = result.plot()
+
+        cv2.imwrite(
+            str(result_path),
+            annotated_image
+        )
+
+        for box in result.boxes:
+
+            class_id = int(
+                box.cls[0]
+            )
+
+            confidence = float(
+                box.conf[0]
+            )
+
+            x1, y1, x2, y2 = (
+                box.xyxy[0].tolist()
+            )
+
+            class_name = (
+                result.names[class_id]
+            )
+
+            confidence_value = round(
+                confidence,
+                4
+            )
+
+            bbox_width = round(
+                x2 - x1,
+                2
+            )
+
+            bbox_height = round(
+                y2 - y1,
+                2
+            )
+
+            # =================================================
+            # DATABASE
+            # =================================================
+
+            db_detection = Detection(
+
+                class_name=class_name,
+
+                confidence=confidence_value,
+
+                latitude=latitude,
+
+                longitude=longitude,
+
+                dimensions=(
+                    f"{bbox_width} x "
+                    f"{bbox_height} px"
+                ),
+
+                survey_id=file_id,
+
+                status="NEW",
+
+                missed_cycles=0,
+
+                last_seen=datetime.utcnow()
+            )
+
+            db.add(
+                db_detection
+            )
+
+            db.flush()
+
+            saved_detection_ids.append(
+                db_detection.id
+            )
+
+            detections.append({
+
+                "class":
+                    class_name,
+
+                "confidence":
+                    confidence_value,
+
+                "bbox": [
+
+                    round(x1, 2),
+                    round(y1, 2),
+                    round(x2, 2),
+                    round(y2, 2)
+
+                ],
+
+                "detection_id":
+                    db_detection.id,
+
+                "status":
+                    db_detection.status,
+
+                "latitude":
+                    latitude,
+
+                "longitude":
+                    longitude
+            })
+
+    # =====================================================
+    # SAVE DATABASE
+    # =====================================================
+
+    try:
+
+        db.commit()
+
+    except Exception as e:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to save XTF detections "
+                f"to database: {str(e)}"
+            )
+        )
+
+    # =====================================================
+    # RESPONSE
+    # =====================================================
+
+    return {
+
+        "success":
+            True,
+
+        "xtf_file":
+            f"/uploads/{xtf_filename}",
+
+        "waterfall_file":
+            f"/results/{waterfall_path.name}",
+
+        "navigation_file":
+            f"/results/{file_id}_nav.csv",
+
+        "annotated_image":
+            f"/results/{result_filename}",
+
+        "navigation_points":
+            len(nav_df),
+
+        "survey_latitude":
+            latitude,
+
+        "survey_longitude":
+            longitude,
+
+        "detection_count":
+            len(detections),
+
+        "detections":
+            detections,
+
+        "saved_detection_ids":
+            saved_detection_ids,
+
+        "status":
+            (
+                "debris_detected"
+                if len(detections) > 0
+                else
+                "no_debris_detected"
+            )
     }
 
 
@@ -1196,11 +1576,11 @@ def get_result_file(
 
 
 # =========================================================
-# ORIGINAL IMAGE
+# ORIGINAL FILE
 # =========================================================
 
 @app.get("/uploads/{filename}")
-def get_original_image(
+def get_original_file(
     filename: str
 ):
 
@@ -1212,7 +1592,7 @@ def get_original_image(
 
         raise HTTPException(
             status_code=404,
-            detail="Original image not found."
+            detail="Original file not found."
         )
 
     return FileResponse(
