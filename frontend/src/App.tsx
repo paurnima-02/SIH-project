@@ -4,28 +4,43 @@ import DebrisHeatmap from "./components/DebrisHeatmap";
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
-  // AquaScan coastal palette: Sea Glass / Beach Mist / Current / Tidal Wave / Coastal Slate
-  bg: "#E9E7E2",
-  card: "#F7F5F1",
-  border: "#C7D0D3",
-  borderMd: "#9AABB7",
-  borderDk: "#6F858D",
-  navy: "#1D3539",
-  navyMd: "#2D5056",
-  muted: "#4D6D76",
-  faint: "#7E929A",
-  blue: "#4D6D76",
-  blueBg: "#DDE5E5",
-  blueDim: "#9AABB7",
-  orange: "#A96F42",
-  orangeBg: "#F1E5DA",
-  orangeDim: "#D3B49B",
-  green: "#55786F",
-  greenBg: "#E0E8E4",
-  greenDim: "#A9BDB6",
-  redAlert: "#A84F4F",
-  amberWarn: "#9A7448",
+  // AquaScan — Light Coastal / Glass Theme
+
+  // Main surfaces
+  bg: "#EAF6F8",
+  card: "#F7FCFD",
+
+  // Borders
+  border: "#B9D8DF",
+  borderMd: "#8FC1CC",
+  borderDk: "#5E9EAD",
+
+  // Typography
+  navy: "#123F4B",
+  navyMd: "#286878",
+  muted: "#5F8995",
+  faint: "#8BAAB3",
+
+  // Primary interactive colour
+  blue: "#287E91",
+  blueBg: "#D7EDF2",
+  blueDim: "#73B4C1",
+
+  // High confidence / important
+  orange: "#F28A4B",
+  orangeBg: "#FFF0E6",
+  orangeDim: "#F6B17E",
+
+  // Success
+  green: "#2EA66D",
+  greenBg: "#E3F6EC",
+  greenDim: "#73C69A",
+
+  // Alerts
+  redAlert: "#DF6670",
+  amberWarn: "#D99A32",
 };
+
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type Screen = "home" | "survey" | "upload" | "viewer" | "heatmap" | "spatial" | "report";
@@ -199,9 +214,19 @@ function Sidebar({ active, onNav }: { active: Screen; onNav: (s: Screen) => void
   const { isProcessing } = useAquaScan();
   return (
     <aside style={{
-      width: 176, flexShrink: 0, display: "flex", flexDirection: "column",
-      background: C.card, borderRight: `1px solid ${C.border}`,
-    }}>
+  width: 176,
+  flexShrink: 0,
+  display: "flex",
+  flexDirection: "column",
+
+  background: "rgba(240, 249, 251, 0.62)",
+  borderRight: "1px solid rgba(255, 255, 255, 0.55)",
+
+  backdropFilter: "blur(18px)",
+  WebkitBackdropFilter: "blur(18px)",
+
+  boxShadow: "6px 0 24px rgba(18, 63, 80, 0.10)",
+}}>
       {/* Instrument header */}
       <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -286,7 +311,18 @@ function SonarDial({ size = 24 }: { size?: number }) {
 // ─── Panel wrappers ───────────────────────────────────────────────────────────
 function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, ...style }}>
+    <div
+      style={{
+        background: "rgba(245, 252, 253, 0.68)",
+        border: "1px solid rgba(255, 255, 255, 0.55)",
+        borderRadius: 16,
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        boxShadow: "0 8px 28px rgba(18, 63, 80, 0.12)",
+        overflow: "hidden",
+        ...style,
+      }}
+    >
       {children}
     </div>
   );
@@ -1150,7 +1186,7 @@ function SpatialViewScreen() {
     padding: "7px 12px", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 600,
   });
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: 18, background: C.bg }}>
+    <div style={{ flex: 1, overflow: "auto", padding: 18, background: "transparent" }}>
       <div style={{ maxWidth: 1180, margin: "0 auto" }}>
         <div className="font-mono" style={{ fontSize: 9, color: C.muted, letterSpacing: ".12em" }}>SPATIAL INTELLIGENCE</div>
         <h1 style={{ margin: "6px 0 4px", fontSize: 25, color: C.navy }}>Spatial View</h1>
@@ -1185,19 +1221,20 @@ export default function App() {
   };
 
   return (
-    <AquaScanContext.Provider value={contextValue}>
-      <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", background: C.bg }}>
-        <Sidebar active={screen} onNav={setScreen} />
-        <main style={{ flex: 1, display: "flex", minWidth: 0, overflow: "hidden" }}>
-          {screen === "home" && <HomeScreen onNav={setScreen} />}
-          {screen === "survey" && <SurveyScreen />}
-          {screen === "upload" && <UploadScreen onNav={setScreen} />}
-          {screen === "viewer" && <ViewerScreen />}
-          {screen === "heatmap" && <DebrisHeatmap />}
-          {screen === "spatial" && <SpatialViewScreen />}
-          {screen === "report" && <ReportScreen />}
-        </main>
-      </div>
-    </AquaScanContext.Provider>
-  );
+  <AquaScanContext.Provider value={contextValue}>
+    <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", background: "transparent" }}>
+      <Sidebar active={screen} onNav={setScreen} />
+
+      <main style={{ flex: 1, display: "flex", minWidth: 0, overflow: "hidden" }}>
+        {screen === "home" && <HomeScreen onNav={setScreen} />}
+        {screen === "survey" && <SurveyScreen />}
+        {screen === "upload" && <UploadScreen onNav={setScreen} />}
+        {screen === "viewer" && <ViewerScreen />}
+        {screen === "heatmap" && <DebrisHeatmap />}
+        {screen === "spatial" && <SpatialViewScreen />}
+        {screen === "report" && <ReportScreen />}
+      </main>
+    </div>
+  </AquaScanContext.Provider>
+);
 }
