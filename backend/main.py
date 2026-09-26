@@ -4,7 +4,6 @@ from fastapi.responses import FileResponse
 
 from pathlib import Path
 from PIL import Image
-from PIL.ExifTags import TAGS, GPSTAGS
 
 import shutil
 import uuid
@@ -22,6 +21,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from detector import detect
 from database import engine, get_db
 from models import Base, Detection
+
+# NEW: combined geotagging logic (real EXIF -> real NOAA wreck coords ->
+# Thunder Bay dummy fallback). See geotag_utils.py.
+from geotag_utils import resolve_geotag
 
 
 # =========================================================
@@ -66,7 +69,10 @@ class ResolveRequest(BaseModel):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8443",
+        "http://127.0.0.1:8443",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,82 +88,6 @@ RESULT_DIR = Path("results")
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULT_DIR.mkdir(exist_ok=True)
-
-
-# =========================================================
-# GPS UTILITIES
-# =========================================================
-
-def convert_to_degrees(value):
-    """Convert GPS coordinates from EXIF to decimal degrees."""
-
-    d, m, s = value
-
-    return (
-        float(d)
-        + (float(m) / 60.0)
-        + (float(s) / 3600.0)
-    )
-
-
-def extract_geotag(image_path: str):
-    """Extract GPS latitude/longitude from image EXIF data."""
-
-    try:
-        image = Image.open(image_path)
-
-        exif_data = image._getexif()
-
-        if not exif_data:
-            return None
-
-        gps_info = {}
-
-        for tag_id, value in exif_data.items():
-
-            tag = TAGS.get(tag_id, tag_id)
-
-            if tag == "GPSInfo":
-
-                for gps_tag_id, gps_value in value.items():
-
-                    gps_tag = GPSTAGS.get(
-                        gps_tag_id,
-                        gps_tag_id
-                    )
-
-                    gps_info[gps_tag] = gps_value
-
-        if not gps_info:
-            return None
-
-        if "GPSLatitude" not in gps_info:
-            return None
-
-        if "GPSLongitude" not in gps_info:
-            return None
-
-        lat = convert_to_degrees(
-            gps_info["GPSLatitude"]
-        )
-
-        if gps_info.get("GPSLatitudeRef") != "N":
-            lat = -lat
-
-        lon = convert_to_degrees(
-            gps_info["GPSLongitude"]
-        )
-
-        if gps_info.get("GPSLongitudeRef") != "E":
-            lon = -lon
-
-        return {
-            "latitude": round(lat, 6),
-            "longitude": round(lon, 6)
-        }
-
-    except Exception:
-        return None
 
 
 # =========================================================
@@ -889,12 +819,22 @@ async def predict(
         )
 
     # -----------------------------------------------------
-    # Extract geotag
+    # Resolve geotag (real EXIF -> real NOAA wreck coords ->
+    # Thunder Bay dummy fallback). Always returns a value --
+    # no more "geotag is None" case to guard against below.
     # -----------------------------------------------------
 
-    geotag = extract_geotag(
-        str(file_path)
+    geotag_result = resolve_geotag(
+        file_path=str(file_path),
+        filename=file.filename
     )
+
+    geotag = {
+        "latitude": geotag_result["latitude"],
+        "longitude": geotag_result["longitude"]
+    }
+
+    geotag_source = geotag_result["source"]  # "real_exif" | "real_noaa" | "simulated"
 
     # -----------------------------------------------------
     # Get image dimensions
@@ -992,17 +932,9 @@ async def predict(
 
                 confidence=confidence_value,
 
-                latitude=(
-                    geotag["latitude"]
-                    if geotag
-                    else None
-                ),
+                latitude=geotag["latitude"],
 
-                longitude=(
-                    geotag["longitude"]
-                    if geotag
-                    else None
-                ),
+                longitude=geotag["longitude"],
 
                 dimensions=(
                     f"{bbox_width} x "
@@ -1084,6 +1016,9 @@ async def predict(
         "geotag":
             geotag,
 
+        "geotag_source":
+            geotag_source,
+
         "detection_count":
             len(detections),
 
@@ -1152,15 +1087,14 @@ async def predict(
         "geotag": {
 
             "lat":
-                geotag["latitude"]
-                if geotag
-                else None,
+                geotag["latitude"],
 
             "lng":
                 geotag["longitude"]
-                if geotag
-                else None
         },
+
+        "geotag_source":
+            geotag_source,
 
         "image_width":
             img_width,

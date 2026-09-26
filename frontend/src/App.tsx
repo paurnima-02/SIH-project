@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useRef, useCallback } from "react";
 import { predictImage } from "./api";
+import DebrisHeatmap from "./components/DebrisHeatmap";
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -26,7 +27,7 @@ const C = {
 };
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
-type Screen = "home" | "survey" | "upload" | "viewer" | "report";
+type Screen = "home" | "survey" | "upload" | "viewer" | "heatmap" | "report";
 // NOTE: "mine" added so the backend's "mine" class (from the Forward-Looking Sonar
 // dataset) maps to a real type instead of falling back to "unknown" / "UK".
 type DebrisType =
@@ -188,7 +189,8 @@ const NAV_ITEMS: { id: Screen; label: string; code: string; badge?: number }[] =
   { id: "survey", label: "Survey", code: "01" },
   { id: "upload", label: "Ingest", code: "02" },
   { id: "viewer", label: "Det. Viewer", code: "03" },
-  { id: "report", label: "Export", code: "04" },
+  { id: "heatmap", label: "Heatmap", code: "04" },
+  { id: "report", label: "Export", code: "05" },
 ];
 
 function Sidebar({ active, onNav }: { active: Screen; onNav: (s: Screen) => void }) {
@@ -847,7 +849,7 @@ function SonarCanvas({ dets, selId, onSel, showBoxes, imageUrl }:
   );
 }
 
-
+// ─── 4. REPORT / EXPORT ────────────────────────────────────────────────────────
 function ReportScreen() {
   const { detections: DETS } = useAquaScan();
   const [fields, setFields] = useState<Record<string, boolean>>({
@@ -858,39 +860,130 @@ function ReportScreen() {
   const [dl, setDl] = useState(false);
   const [sortKey, setSort] = useState("confidence");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  const [scope, setScope] = useState<"all" | "high" | "reviewed">("all");
 
-  const sorted = [...DETS].sort((a, b) => {
+  // Real counts, not hardcoded strings
+  const highCount = DETS.filter(d => tier(d.confidence) === "high").length;
+  const reviewedCount = 0; // wire this up once you have a review/confirm flow
+
+  const scoped = DETS.filter(d => {
+    if (scope === "high") return tier(d.confidence) === "high";
+    if (scope === "reviewed") return false; // no review flow yet
+    return true;
+  });
+
+  const sorted = [...scoped].sort((a, b) => {
     const av = (a as any)[sortKey], bv = (b as any)[sortKey];
     return (typeof av === "number" ? av - bv : String(av).localeCompare(String(bv))) * sortDir;
   });
 
   const doSort = (k: string) => { if (k === sortKey) setSortDir(d => d === 1 ? -1 : 1); else { setSort(k); setSortDir(-1); } };
-  const download = () => {
-    setDl(true);
-    const headers = COLS.map(k => FIELD_LABELS[k]);
-    const rows = sorted.map(d => COLS.map(k => (d as any)[k]));
 
-    if (fmt === "CSV") {
-      const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = "detections.csv"; a.click();
-    } else if (fmt === "JSON") {
-      const json = JSON.stringify(sorted, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = "detections.json"; a.click();
-    }
-
-    setTimeout(() => setDl(false), 800);
-  };
   const FIELD_LABELS: Record<string, string> = {
     id: "Object ID", type: "Classification", confidence: "Confidence",
     scanId: "Scan ID", timestamp: "Timestamp",
   };
   const COLS = Object.keys(fields).filter(k => fields[k]);
+
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const buildGeoJSON = () => {
+    return {
+      type: "FeatureCollection",
+      features: sorted.map(d => ({
+        type: "Feature",
+        geometry: d.latitude != null && d.longitude != null
+          ? { type: "Point", coordinates: [d.longitude, d.latitude] }
+          : null,
+        properties: {
+          id: d.id,
+          type: d.label || TYPE_LABEL[d.type],
+          confidence: d.confidence,
+          scanId: d.scanId,
+          timestamp: d.timestamp,
+        },
+      })),
+    };
+  };
+
+  const buildPrintableReportHtml = () => {
+    const rows = sorted.map(d => `
+      <tr>
+        <td>${d.id}</td>
+        <td>${d.label || TYPE_LABEL[d.type]}</td>
+        <td>${d.confidence}%</td>
+        <td>${d.scanId}</td>
+        <td>${d.latitude != null ? d.latitude.toFixed(6) : "N/A"}</td>
+        <td>${d.longitude != null ? d.longitude.toFixed(6) : "N/A"}</td>
+        <td>${d.timestamp.slice(0, 19).replace("T", " ")}</td>
+      </tr>`).join("");
+
+    return `
+      <html>
+        <head>
+          <title>AquaScan Detection Report</title>
+          <style>
+            body { font-family: -apple-system, Arial, sans-serif; padding: 24px; color: #1B2226; }
+            h1 { font-size: 18px; }
+            .meta { color: #5B6770; font-size: 12px; margin-bottom: 16px; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            th, td { border: 1px solid #E1E7EA; padding: 6px 8px; text-align: left; }
+            th { background: #F7F9FA; text-transform: uppercase; font-size: 9px; letter-spacing: .05em; }
+          </style>
+        </head>
+        <body>
+          <h1>AquaScan Marine Debris Detection Report</h1>
+          <div class="meta">
+            Generated ${new Date().toLocaleString()} &middot; ${sorted.length} detection(s) &middot; scope: ${scope}
+          </div>
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Type</th><th>Confidence</th><th>Scan</th><th>Latitude</th><th>Longitude</th><th>Timestamp</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </body>
+      </html>`;
+  };
+
+  const download = () => {
+    setDl(true);
+
+    if (fmt === "CSV") {
+      const headers = COLS.map(k => FIELD_LABELS[k]);
+      const rows = sorted.map(d => COLS.map(k => (d as any)[k]));
+      const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
+      triggerDownload(new Blob([csv], { type: "text/csv" }), "detections.csv");
+
+    } else if (fmt === "JSON") {
+      const json = JSON.stringify(sorted, null, 2);
+      triggerDownload(new Blob([json], { type: "application/json" }), "detections.json");
+
+    } else if (fmt === "GeoJSON") {
+      const geojson = JSON.stringify(buildGeoJSON(), null, 2);
+      triggerDownload(new Blob([geojson], { type: "application/geo+json" }), "detections.geojson");
+
+    } else if (fmt === "PDF") {
+      // No PDF library dependency needed -- opens a print-styled window;
+      // the user picks "Save as PDF" in their browser's print dialog.
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(buildPrintableReportHtml());
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => printWindow.print(), 250);
+      }
+    }
+
+    setTimeout(() => setDl(false), 800);
+  };
 
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -942,16 +1035,17 @@ function ReportScreen() {
           <div style={{ marginBottom: 10 }}>
             <Label caps>Filter scope</Label>
             <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
-              {[
-                ["all", "All detections (8)"],
-                ["high", "High-confidence only (4)"],
-                ["reviewed", "Analyst-reviewed (0)"],
-              ].map(([k, l]) => (
+              {([
+                ["all", `All detections (${DETS.length})`],
+                ["high", `High-confidence only (${highCount})`],
+                ["reviewed", `Analyst-reviewed (${reviewedCount})`],
+              ] as const).map(([k, l]) => (
                 <label key={k} style={{
                   display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
                   padding: "3px 0"
                 }}>
-                  <input type="radio" name="scope" defaultChecked={k === "all"}
+                  <input type="radio" name="scope" checked={scope === k}
+                    onChange={() => setScope(k as typeof scope)}
                     style={{ accentColor: C.blue }} />
                   <span style={{ fontSize: 11, color: C.muted }}>{l}</span>
                 </label>
@@ -962,18 +1056,19 @@ function ReportScreen() {
           <div>
             <Label caps>Session metadata</Label>
             <div style={{ marginTop: 6 }}>
-              <FieldRow label="Detections" value={String(DETS.length)} mono />
+              <FieldRow label="Detections" value={String(sorted.length)} mono />
               <FieldRow label="Source" value={DETS[0]?.scanId || "No scan loaded"} mono />
             </div>
           </div>
         </div>
 
         <div style={{ borderTop: `1px solid ${C.border}`, padding: "8px 10px" }}>
-          <button onClick={download}
+          <button onClick={download} disabled={sorted.length === 0}
             style={{
               width: "100%", background: dl ? C.blueBg : C.blue, color: dl ? C.blue : "#fff",
               border: `1px solid ${C.blue}`, borderRadius: 2, padding: "6px",
-              fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all .15s",
+              fontSize: 12, fontWeight: 500, cursor: sorted.length === 0 ? "not-allowed" : "pointer",
+              opacity: sorted.length === 0 ? 0.5 : 1, transition: "all .15s",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             }}>
             {dl ? (
@@ -991,7 +1086,7 @@ function ReportScreen() {
 
       {/* Preview table */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <PanelHead title="Preview" sub={`${DETS.length} records · ${COLS.length} fields`}
+        <PanelHead title="Preview" sub={`${sorted.length} records · ${COLS.length} fields · scope: ${scope}`}
           right={
             <span className="font-mono" style={{ fontSize: 9, color: C.faint }}>
               {fmt} preview
@@ -1062,6 +1157,7 @@ export default function App() {
           {screen === "survey" && <SurveyScreen />}
           {screen === "upload" && <UploadScreen onNav={setScreen} />}
           {screen === "viewer" && <ViewerScreen />}
+          {screen === "heatmap" && <DebrisHeatmap />}
           {screen === "report" && <ReportScreen />}
         </main>
       </div>
