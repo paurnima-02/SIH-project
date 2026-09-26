@@ -23,3 +23,7 @@ backend/marine_debris.db
 # Local zip files
 backend.zip
 backend zip.zip
+
+# YOLO training artifacts (regenerable, too large for git)
+AI4Shipwrecks/runs/
+*.pt
