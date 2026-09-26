@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1,
+             maximum-scale=1, user-scalable=no"
+  >
+
+  <title>AquaScan — AR Field View</title>
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+
+  <!-- look-at component (needed for markers/labels to face the camera) -->
+  <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
+
+  <!-- AR.js (version-pinned so behaviour doesn't change under you) -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background: black;
+    }
+
+    #ui-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      z-index: 9999;
+      padding: 12px;
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+
+    #status-bar {
+      background: rgba(0, 0, 0, 0.78);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 15px;
+      display: inline-block;
+      max-width: 90%;
+      box-sizing: border-box;
+    }
+
+    #status-bar.error {
+      background: rgba(180, 0, 0, 0.85);
+    }
+  </style>
+</head>
+
+
+<body>
+
+  <!-- ==================================================
+       TOP STATUS
+       ================================================== -->
+
+  <div id="ui-overlay">
+
+    <div id="status-bar">
+      📍 Getting your location...
+    </div>
+
+  </div>
+
+
+  <!-- ==================================================
+       AR SCENE
+       ================================================== -->
+
+  <a-scene
+    embedded
+    vr-mode-ui="enabled: false"
+    renderer="logarithmicDepthBuffer: true"
+    arjs="
+      sourceType: webcam;
+      videoTexture: true;
+      debugUIEnabled: false;
+    "
+  >
+
+    <!-- Phone camera + GPS -->
+
+    <a-camera
+      gps-new-camera="gpsMinDistance: 1"
+      rotation-reader
+    ></a-camera>
+
+
+    <!-- Detection markers will be added here -->
+
+    <a-entity id="detection-container"></a-entity>
+
+  </a-scene>
+
+
+  <!-- ==================================================
+       JAVASCRIPT
+       ================================================== -->
+
+  <script>
+
+    // ==================================================
+    // ELEMENTS
+    // ==================================================
+
+    const container =
+      document.getElementById("detection-container");
+
+    const statusBar =
+      document.getElementById("status-bar");
+
+
+    // ==================================================
+    // DETECTIONS
+    // ==================================================
+
+    let DEMO_DETECTIONS = [];
+
+
+    // ==================================================
+    // METERS → LATITUDE
+    // ==================================================
+
+    function metersToLatitude(meters) {
+
+      return meters / 111320;
+
+    }
+
+
+    // ==================================================
+    // METERS → LONGITUDE
+    // ==================================================
+
+    function metersToLongitude(meters, latitude) {
+
+      return meters /
+        (
+          111320 *
+          Math.cos(latitude * Math.PI / 180)
+        );
+
+    }
+
+
+    // ==================================================
+    // CREATE DEMO DETECTIONS
+    // ==================================================
+
+    function createDemoDetections(userLat, userLon) {
+
+      /*
+        Demo objects are intentionally kept very close
+        to the phone for testing.
+
+        Ghost Net  → ~2m north
+        Bottle     → ~2m east
+        Metal      → ~2m south
+      */
+
+      const offsetLat =
+        metersToLatitude(2);
+
+      const offsetLon =
+        metersToLongitude(2, userLat);
+
+
+      DEMO_DETECTIONS = [
+
+        {
+          id: 1,
+
+          class_name: "Ghost Net",
+
+          confidence: 0.91,
+
+          status: "CONFIRMED",
+
+          latitude:
+            userLat + offsetLat,
+
+          longitude:
+            userLon
+        },
+
+
+        {
+          id: 2,
+
+          class_name: "Bottle",
+
+          confidence: 0.78,
+
+          status: "DRIFTING",
+
+          latitude:
+            userLat,
+
+          longitude:
+            userLon + offsetLon
+        },
+
+
+        {
+          id: 3,
+
+          class_name: "Metal Object",
+
+          confidence: 0.65,
+
+          status: "MISSING",
+
+          latitude:
+            userLat - offsetLat,
+
+          longitude:
+            userLon
+        }
+
+      ];
+
+    }
+
+
+    // ==================================================
+    // STATUS COLOR
+    // ==================================================
+
+    function getColor(status) {
+
+      if (
+        status === "CONFIRMED" ||
+        status === "STATIONARY"
+      ) {
+
+        return "#22c55e";
+
+      }
+
+
+      if (
+        status === "DRIFTING" ||
+        status === "NEW"
+      ) {
+
+        return "#facc15";
+
+      }
+
+
+      if (status === "MISSING") {
+
+        return "#ef4444";
+
+      }
+
+
+      return "#8b5cf6";
+
+    }
+
+
+    // ==================================================
+    // CREATE AR MARKER
+    // ==================================================
+
+    function renderDetection(det) {
+
+      // ----------------------------------------------
+      // GPS wrapper
+      // ----------------------------------------------
+
+      const wrapper =
+        document.createElement("a-entity");
+
+
+      wrapper.setAttribute(
+        "gps-new-entity-place",
+        `latitude: ${det.latitude};
+         longitude: ${det.longitude};`
+      );
+
+
+      // ----------------------------------------------
+      // 3D sphere
+      // ----------------------------------------------
+
+      const marker =
+        document.createElement("a-sphere");
+
+
+      marker.setAttribute(
+        "radius",
+        "1.2"
+      );
+
+
+      marker.setAttribute(
+        "color",
+        getColor(det.status)
+      );
+
+
+      marker.setAttribute(
+        "opacity",
+        "0.95"
+      );
+
+
+      marker.setAttribute(
+        "material",
+        "shader: standard; transparent: true;"
+      );
+
+
+      marker.setAttribute(
+        "look-at",
+        "[gps-new-camera]"
+      );
+
+
+      wrapper.appendChild(marker);
+
+
+      // ----------------------------------------------
+      // Detection label
+      // ----------------------------------------------
+
+      const label =
+        document.createElement("a-text");
+
+
+      label.setAttribute(
+        "value",
+        `#${det.id} ${det.class_name}\n` +
+        `${(det.confidence * 100).toFixed(0)}% • ${det.status}`
+      );
+
+
+      label.setAttribute(
+        "align",
+        "center"
+      );
+
+
+      label.setAttribute(
+        "color",
+        "#ffffff"
+      );
+
+
+      label.setAttribute(
+        "width",
+        "8"
+      );
+
+
+      label.setAttribute(
+        "scale",
+        "3 3 3"
+      );
+
+
+      label.setAttribute(
+        "position",
+        "0 2 0"
+      );
+
+
+      label.setAttribute(
+        "look-at",
+        "[gps-new-camera]"
+      );
+
+
+      wrapper.appendChild(label);
+
+
+      // ----------------------------------------------
+      // Add detection to scene
+      // ----------------------------------------------
+
+      container.appendChild(wrapper);
+
+
+      console.log(
+        "AR detection added:",
+        det
+      );
+
+    }
+
+
+    // ==================================================
+    // START AR
+    // ==================================================
+
+    function startAR() {
+
+      // ----------------------------------------------
+      // Check GPS
+      // ----------------------------------------------
+
+      if (!navigator.geolocation) {
+
+        statusBar.textContent =
+          "❌ GPS is not supported on this device.";
+
+        statusBar.classList.add("error");
+
+        return;
+
+      }
+
+
+      statusBar.textContent =
+        "📍 Getting your location...";
+
+
+      // ----------------------------------------------
+      // Get phone location
+      // ----------------------------------------------
+
+      navigator.geolocation.getCurrentPosition(
+
+        function(position) {
+
+          const userLat =
+            position.coords.latitude;
+
+          const userLon =
+            position.coords.longitude;
+
+
+          console.log(
+            "User latitude:",
+            userLat
+          );
+
+
+          console.log(
+            "User longitude:",
+            userLon
+          );
+
+
+          console.log(
+            "GPS accuracy:",
+            position.coords.accuracy,
+            "meters"
+          );
+
+
+          // ------------------------------------------
+          // Create nearby demo detections
+          // ------------------------------------------
+
+          createDemoDetections(
+            userLat,
+            userLon
+          );
+
+
+          // ------------------------------------------
+          // Update status
+          // ------------------------------------------
+
+          statusBar.textContent =
+            "📡 3 detections loaded — point camera around";
+
+
+          // ------------------------------------------
+          // Render detections
+          // ------------------------------------------
+
+          DEMO_DETECTIONS.forEach(
+            function(det) {
+
+              renderDetection(det);
+
+            }
+          );
+
+        },
+
+
+        function(error) {
+
+          console.error(
+            "GPS error:",
+            error
+          );
+
+
+          statusBar.textContent =
+            "❌ Location permission required. Allow GPS and refresh.";
+
+          statusBar.classList.add("error");
+
+        },
+
+
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0
+        }
+
+      );
+
+    }
+
+
+    // ==================================================
+    // CAMERA PERMISSION CHECK (extra safety net)
+    // ==================================================
+
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+
+      navigator.mediaDevices
+        .getUserMedia({ video: true })
+        .catch(function(err) {
+
+          console.error("Camera error:", err);
+
+          statusBar.textContent =
+            "❌ Camera permission required. Allow camera and refresh.";
+
+          statusBar.classList.add("error");
+
+        });
+
+    }
+
+
+    // ==================================================
+    // START
+    // ==================================================
+
+    startAR();
+
+  </script>
+
+</body>
+
+</html>
