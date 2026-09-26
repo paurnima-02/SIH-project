@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from pathlib import Path
 from PIL import Image
@@ -76,6 +77,19 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+
+# =========================================================
+# AR FRONTEND (static files)
+# =========================================================
+# Serves frontend/ar/index.html at /ar/ so it shares the same
+# origin (and the same ngrok tunnel) as the API itself.
+
+app.mount(
+    "/ar",
+    StaticFiles(directory="../frontend/ar", html=True),
+    name="ar"
 )
 
 
