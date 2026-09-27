@@ -3,6 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends
+from datetime import datetime
+import csv
+from fastapi import Form
+from geo import pixel_to_latlon, nearest_nav_row
+from reconstruct_3d import reconstruct_patch_from_bbox
+from render_3d import render_textured_surface
+from sqlalchemy.orm import Session
+from typing import Optional
 from pathlib import Path
 from PIL import Image
 
@@ -18,7 +27,18 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from apscheduler.schedulers.background import BackgroundScheduler
+try:
+    # Import dynamically so static analyzers do not require the optional
+    # APScheduler package to be installed for this module to load.
+    from importlib import import_module
+
+    BackgroundScheduler = import_module(
+        "apscheduler.schedulers.background"
+    ).BackgroundScheduler
+except ImportError:
+    # Keep the API importable in environments where the optional scheduler
+    # dependency is not installed.
+    BackgroundScheduler = None
 
 
 # =========================================================
@@ -53,6 +73,8 @@ from geotag_utils import resolve_geotag
 # DATABASE
 # =========================================================
 
+from database import engine, get_db
+from models import Base, Detection
 Base.metadata.create_all(bind=engine)
 
 
@@ -124,6 +146,15 @@ RESULT_DIR = Path(__file__).resolve().parent / "results"
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULT_DIR.mkdir(exist_ok=True)
+
+# Defaults used only when the caller hasn't supplied a calibrated scale
+# (e.g. a plain photo upload via /predict, as opposed to /predict-xtf which
+# always gets a real pixel_size_m + nav altitude from the survey). The 3D
+# view built with these defaults is still a genuine schematic of the
+# detected object's footprint — only the absolute height number is a
+# rough estimate rather than a georeferenced measurement.
+DEFAULT_PIXEL_SIZE_M = 0.05
+DEFAULT_SENSOR_ALTITUDE_M = 5.0
 
 
 # =========================================================
@@ -276,26 +307,100 @@ def check_missing_detections():
 # START SCHEDULER
 # =========================================================
 
-scheduler = BackgroundScheduler()
+if BackgroundScheduler is not None:
+    scheduler = BackgroundScheduler()
 
-scheduler.add_job(
-    check_missing_detections,
-    "interval",
-    seconds=SURVEY_CYCLE_SECONDS,
-    id="missing_detection_checker",
-    replace_existing=True
-)
+    scheduler.add_job(
+        check_missing_detections,
+        "interval",
+        seconds=SURVEY_CYCLE_SECONDS,
+        id="missing_detection_checker",
+        replace_existing=True
+    )
 
-scheduler.start()
+    scheduler.start()
 
-print(
-    "[Scheduler] Missing detection scheduler started."
-)
+    print(
+        "[Scheduler] Missing detection scheduler started."
+    )
+else:
+    scheduler = None
+    print(
+        "[Scheduler] APScheduler is not installed; scheduler disabled."
+    )
 
 
 # =========================================================
 # ROOT
 # =========================================================
+
+def run_3d_reconstruction(
+    full_img: Image.Image,
+    img_width: int,
+    img_height: int,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    file_id: str,
+    idx,
+    pixel_size_m: float,
+    sensor_altitude_m: float,
+) -> dict:
+    """
+    Shared by /predict and /predict-xtf.
+
+    Crops a margin around ONE detection's bbox, builds the schematic
+    flat-seabed + raised-object relief (reconstruct_patch_from_bbox), and
+    renders a shaded/textured preview PNG of it (render_textured_surface)
+    so the frontend can show "here's the object, raised out of a flat
+    plane in roughly its own footprint" right next to the 2D detection —
+    which is what makes it readable for someone planning a cleanup, versus
+    a full noisy bathymetric guess of the whole scene.
+    """
+    margin_x = int((x2 - x1) * 0.5)
+    margin_y = int((y2 - y1) * 0.5)
+    padded_x1 = max(0, int(x1) - margin_x)
+    padded_y1 = max(0, int(y1) - margin_y)
+    padded_x2 = min(img_width, int(x2) + margin_x)
+    padded_y2 = min(img_height, int(y2) + margin_y)
+
+    name = f"{file_id}_{idx}"
+    crop_path = RESULT_DIR / f"{name}_crop.png"
+    full_img.crop((padded_x1, padded_y1, padded_x2, padded_y2)).save(crop_path)
+
+    local_bbox = (
+        int(x1) - padded_x1, int(y1) - padded_y1,
+        int(x2) - padded_x1, int(y2) - padded_y1,
+    )
+
+    recon = reconstruct_patch_from_bbox(
+        str(crop_path), local_bbox, str(RESULT_DIR),
+        pixel_size_m=pixel_size_m, sensor_altitude_m=sensor_altitude_m,
+        name=name,
+    )
+
+    preview_path = RESULT_DIR / f"{name}_3d_preview.png"
+    try:
+        render_textured_surface(
+            recon["heightmap_png_path"].replace("_heightmap.png", "_heightmap.npy"),
+            str(crop_path),
+            str(preview_path),
+        )
+        preview_path_str = str(preview_path)
+    except Exception:
+        # Rendering the preview image is a nice-to-have on top of the
+        # heightmap/mesh — never fail the whole detection over it.
+        preview_path_str = None
+
+    return {
+        "estimated_height_m": recon["estimated_height_m"],
+        "height_source": recon["height_source"],
+        "heightmap_path": recon["heightmap_png_path"],
+        "mesh_path": recon["mesh_path"],
+        "preview_3d_path": preview_path_str,
+    }
+
 
 @app.get("/")
 def root():
@@ -788,7 +893,10 @@ def get_detection_report(
 @app.post("/predict")
 async def predict(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    survey_id: Optional[str] = Form(None),
+    pixel_size_m: float = Form(DEFAULT_PIXEL_SIZE_M),
+    sensor_altitude_m: float = Form(DEFAULT_SENSOR_ALTITUDE_M),
 ):
 
     allowed_types = {
@@ -842,6 +950,126 @@ async def predict(
     geotag = {
         "latitude": geotag_result["latitude"],
         "longitude": geotag_result["longitude"]
+    }
+    # ``resolve_location`` is not defined in this module.  The geotag
+    # resolver already returns the normalized coordinates and their source,
+    # so use those values directly for the response.
+    location = {
+        "latitude": geotag["latitude"],
+        "longitude": geotag["longitude"],
+        "source": geotag_result.get("source", "dummy_fallback"),
+    }
+
+    try:
+        full_img = Image.open(file_path)
+        img_width, img_height = full_img.size
+    except Exception:
+        full_img = None
+        img_width, img_height = None, None
+
+    try:
+        results = detect(str(file_path))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
+
+    detections = []
+    result_filename = f"{file_id}_annotated.jpg"
+    result_path = RESULT_DIR / result_filename
+
+    for result in results:
+        annotated_image = result.plot()
+        cv2.imwrite(str(result_path), annotated_image)
+
+        for idx, box in enumerate(result.boxes):
+            class_id = int(box.cls[0])
+            confidence = float(box.conf[0])
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+            det = {
+                "class": result.names[class_id],
+                "confidence": round(confidence, 4),
+                "bbox": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)],
+            }
+
+            # Build the flat-plane + raised-object 3D view for this
+            # detection, same as the sonar-corrected flow, so the person
+            # gets a "here's its shape sticking up" view right away.
+            if full_img is not None:
+                recon = run_3d_reconstruction(
+                    full_img, img_width, img_height,
+                    x1, y1, x2, y2,
+                    file_id, idx,
+                    pixel_size_m, sensor_altitude_m,
+                )
+                det["estimated_height_m"] = recon["estimated_height_m"]
+                det["height_source"] = recon["height_source"]
+                det["heightmap_png"] = f"/results/{Path(recon['heightmap_path']).name}"
+                det["mesh_url"] = f"/results/{Path(recon['mesh_path']).name}"
+                det["preview_3d_url"] = (
+                    f"/results/{Path(recon['preview_3d_path']).name}"
+                    if recon["preview_3d_path"] else None
+                )
+            else:
+                recon = {"estimated_height_m": None, "heightmap_path": None, "mesh_path": None}
+
+            detections.append(det)
+
+    # ── save each detection into the database ──
+    db_rows = []
+    lat = geotag["latitude"] if geotag else None
+    lon = geotag["longitude"] if geotag else None
+
+    for d in detections:
+        row = Detection(
+            class_name=d["class"],
+            confidence=d["confidence"],
+            latitude=lat,
+            longitude=lon,
+            survey_id=survey_id,
+            status="NEW",
+            estimated_height_m=d.get("estimated_height_m"),
+            heightmap_path=d.get("heightmap_png"),
+            mesh_path=d.get("mesh_url"),
+            render_preview_path=d.get("preview_3d_url"),
+        )
+        db.add(row)
+        db_rows.append(row)
+
+    db.commit()
+
+    for d, row in zip(detections, db_rows):
+        db.refresh(row)
+        d["id"] = row.id
+        d["status"] = row.status
+
+    interpretation = {
+        "image_id": file_id,
+        "geotag": geotag,
+        "location": location,
+        "detection_count": len(detections),
+        "detections": detections,
+        "status": "debris_detected" if len(detections) > 0 else "no_debris_detected"
+    }
+
+    interpretation_filename = f"{file_id}_interpretation.json"
+    interpretation_path = RESULT_DIR / interpretation_filename
+    with open(interpretation_path, "w") as f:
+        json.dump(interpretation, f, indent=2)
+
+    return {
+        "success": True,
+        "original_image": f"/uploads/{original_filename}",
+        "annotated_image": f"/results/{result_filename}",
+        "interpretation": interpretation,
+        "interpretation_file": f"/results/{interpretation_filename}",
+        "detections": detections,
+        "geotag": {
+            "lat": location["latitude"],
+            "lng": location["longitude"],
+            "source": location["source"],  # "exif" or "dummy_fallback"
+        },
+        "image_width": img_width,
+        "image_height": img_height,
     }
 
     geotag_source = geotag_result["source"]
@@ -1554,25 +1782,148 @@ async def predict_xtf(
 # RESULT FILE
 # =========================================================
 
-@app.get("/results/{filename}")
-def get_result_file(
-    filename: str
+@app.post("/predict-xtf")
+async def predict_xtf(
+    file: UploadFile = File(...),          # corrected waterfall PNG (Member 1 ka output)
+    nav_csv: UploadFile = File(...),        # matching *_nav.csv (Member 1 ka output)
+    pixel_size_m: float = Form(...),
+    nadir_col_px: int = Form(None),
+    db: Session = Depends(get_db)
 ):
+    file_id = str(uuid.uuid4())
+    file_path = UPLOAD_DIR / f"{file_id}_{file.filename}"
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-    file_path = (
-        RESULT_DIR / filename
-    )
+    # nav CSV parse karo
+    nav_rows = []
+    reader = csv.DictReader((line.decode() for line in nav_csv.file))
+    for row in reader:
+        nav_rows.append({
+            "row_index": int(row["row_index"]),
+            "lat": float(row["lat"]),
+            "lon": float(row["lon"]),
+            "heading": float(row["heading"]),
+            "altitude": float(row.get("altitude", 5.0) or 5.0),
+        })
 
+    with Image.open(file_path) as full_img:
+        img_width, img_height = full_img.size
+        nadir = nadir_col_px if nadir_col_px is not None else img_width // 2
+
+        try:
+            results = detect(str(file_path))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
+
+        detections = []
+        result_path = RESULT_DIR / f"{file_id}_annotated.jpg"
+
+        for result in results:
+            cv2.imwrite(str(result_path), result.plot())
+
+            for idx, box in enumerate(result.boxes):
+                class_id = int(box.cls[0])
+                confidence = float(box.conf[0])
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                x_center, y_center = (x1 + x2) / 2, (y1 + y2) / 2
+
+                # geotag correction — ship position se object ka real position nikalna
+                nav_row = nearest_nav_row(nav_rows, y_center)
+                lat, lon = pixel_to_latlon(
+                    nav_row["lat"], nav_row["lon"], nav_row["heading"],
+                    x_center, nadir, pixel_size_m,
+                )
+
+                recon = run_3d_reconstruction(
+                    full_img, img_width, img_height,
+                    x1, y1, x2, y2,
+                    file_id, idx,
+                    pixel_size_m, nav_row["altitude"],
+                )
+
+                db_detection = Detection(
+                    class_name=result.names[class_id],
+                    confidence=round(confidence, 4),
+                    latitude=lat,
+                    longitude=lon,
+                    dimensions=f"{round(x2 - x1, 2)} x {round(y2 - y1, 2)} px",
+                    survey_id=file_id,
+                    status="NEW",
+                    missed_cycles=0,
+                    last_seen=datetime.utcnow(),
+                    estimated_height_m=recon["estimated_height_m"],
+                    heightmap_path=recon["heightmap_path"],
+                    mesh_path=recon["mesh_path"],
+                    render_preview_path=recon["preview_3d_path"],
+                )
+                db.add(db_detection)
+                db.flush()
+
+                detections.append({
+                    "class": db_detection.class_name,
+                    "confidence": db_detection.confidence,
+                    "bbox": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)],
+                    "detection_id": db_detection.id,
+                    "status": db_detection.status,
+                    "location_source": "xtf_corrected",
+                    "estimated_height_m": db_detection.estimated_height_m,
+                    "heightmap_png": f"/results/{Path(db_detection.heightmap_path).name}" if db_detection.heightmap_path else None,
+                    "mesh_url": f"/results/{Path(db_detection.mesh_path).name}" if db_detection.mesh_path else None,
+                    "preview_3d_url": f"/results/{Path(db_detection.render_preview_path).name}" if db_detection.render_preview_path else None,
+                })
+
+    db.commit()
+    return {
+        "success": True,
+        "image_id": file_id,
+        "annotated_image": f"/results/{result_path.name}",
+        "detection_count": len(detections),
+        "detections": detections,
+    }
+
+
+@app.get("/results/{filename}")
+def get_result_file(filename: str):
+    file_path = RESULT_DIR / filename
     if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found.")
+    return FileResponse(file_path)
 
-        raise HTTPException(
-            status_code=404,
-            detail="File not found."
-        )
 
-    return FileResponse(
-        file_path
-    )
+def detection_to_dict(row: Detection):
+    """Serialize a Detection ORM row into a plain JSON-safe dict."""
+    return {
+        "id": row.id,
+        "class_name": row.class_name,
+        "confidence": row.confidence,
+        "latitude": row.latitude,
+        "longitude": row.longitude,
+        "dimensions": row.dimensions,
+        "survey_id": row.survey_id,
+        "status": row.status,
+        "estimated_height_m": row.estimated_height_m,
+        "heightmap_png": f"/results/{Path(row.heightmap_path).name}" if row.heightmap_path else None,
+        "mesh_url": f"/results/{Path(row.mesh_path).name}" if row.mesh_path else None,
+        "preview_3d_url": f"/results/{Path(row.render_preview_path).name}" if getattr(row, "render_preview_path", None) else None,
+        "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@app.get("/detections")
+def get_detections(
+    survey_id: Optional[str] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(Detection)
+    if survey_id is not None:
+        query = query.filter(Detection.survey_id == survey_id)
+    if status is not None:
+        query = query.filter(Detection.status == status)
+    return [detection_to_dict(row) for row in query.all()]
 
 
 # =========================================================

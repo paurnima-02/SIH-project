@@ -14,6 +14,9 @@ class Detection(Base):
 
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    estimated_height_m = Column(Float, nullable=True)
+    heightmap_path = Column(String, nullable=True)
+    mesh_path = Column(String, nullable=True)
 
     dimensions = Column(String, nullable=True)
 
