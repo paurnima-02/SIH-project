@@ -29,7 +29,8 @@ def detect(image_path: str):
 
     results = model.predict(
         source=image_path,
-        conf=0.10,
+        conf=0.35,
+        imgsz=1280,
         save=False
     )
 
