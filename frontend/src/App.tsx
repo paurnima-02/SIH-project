@@ -3,7 +3,9 @@ import { predictImage } from "./api";
 import DebrisHeatmap from "./components/DebrisHeatmap";
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
-const C = {
+type Theme = "dark" | "light";
+
+const DARK_C = {
   // AquaScan — Dark Sonar Command Center
   bg: "#06111A",
   card: "#0B1C29",
@@ -33,6 +35,39 @@ const C = {
   redAlert: "#FF5F6D",
   amberWarn: "#FFC857",
 };
+
+const LIGHT_C = {
+  // Clean daylight / briefing-room palette
+  bg: "#EEF6F8",
+  card: "#FFFFFF",
+  cardAlt: "#F5FAFB",
+
+  border: "#C8DDE3",
+  borderMd: "#9DBFC9",
+  borderDk: "#6E9EAB",
+
+  navy: "#12313C",
+  navyMd: "#2A6270",
+  muted: "#5E7F89",
+  faint: "#8BA5AD",
+
+  blue: "#087F9D",
+  blueBg: "#DDF2F7",
+  blueDim: "#4F9EAF",
+
+  orange: "#D97820",
+  orangeBg: "#FFF0E1",
+  orangeDim: "#C58A50",
+
+  green: "#168B70",
+  greenBg: "#E1F5EF",
+  greenDim: "#4AA890",
+
+  redAlert: "#D94B59",
+  amberWarn: "#B87900",
+};
+
+let C: typeof DARK_C = DARK_C;
 
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -66,8 +101,18 @@ const TYPE_CODE: Record<DebrisType, string> = {
 };
 
 function tier(c: number): ConfTier { return c >= 75 ? "high" : c >= 40 ? "medium" : "low"; }
-const TIER_COLOR: Record<ConfTier, string> = { high: C.orange, medium: C.amberWarn, low: C.green };
-const TIER_BG: Record<ConfTier, string> = { high: C.orangeBg, medium: "#FDF6E3", low: C.greenBg };
+const TIER_COLOR: Record<ConfTier, string> = {
+  high: DARK_C.orange,
+  medium: DARK_C.amberWarn,
+  low: DARK_C.green,
+};
+
+function tierBg(t: ConfTier) {
+  return t === "high" ? C.orangeBg : t === "medium"
+    ? (C === DARK_C ? "#3A2B16" : "#FFF4D6")
+    : C.greenBg;
+}
+
 const TIER_LABEL: Record<ConfTier, string> = { high: "HIGH", medium: "REVIEW", low: "LOW" };
 
 // ─── Live detection state ──────────────────────────────────────────────────────
@@ -121,7 +166,7 @@ function TierTag({ v }: { v: number }) {
     <span className="font-mono inline-flex items-center"
       style={{
         fontSize: 18, fontWeight: 600, padding: "1px 5px",
-        background: TIER_BG[t], color: TIER_COLOR[t],
+        background: tierBg(t), color: TIER_COLOR[t],
         border: `1px solid ${TIER_COLOR[t]}44`,
         borderRadius: 2, letterSpacing: ".05em",
       }}>
@@ -150,6 +195,35 @@ function StatusLED({ on, color }: { on: boolean; color: string }) {
       display: "inline-block", width: 6, height: 6,
       borderRadius: "50%", background: on ? color : C.borderMd, flexShrink: 0,
     }} />
+  );
+}
+
+function ThemeToggle({ theme, onChange }: { theme: Theme; onChange: (theme: Theme) => void }) {
+  const isDark = theme === "dark";
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      gap: 8, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}`,
+    }}>
+      <span className="font-mono" style={{ fontSize: 15, color: C.faint, letterSpacing: ".06em" }}>
+        THEME
+      </span>
+      <button
+        type="button"
+        onClick={() => onChange(isDark ? "light" : "dark")}
+        aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          padding: "4px 7px", borderRadius: 3,
+          border: `1px solid ${C.borderMd}`,
+          background: C.cardAlt, color: C.muted,
+          cursor: "pointer", fontSize: 14, fontWeight: 600,
+        }}
+      >
+        <span>{isDark ? "☀" : "◐"}</span>
+        <span>{isDark ? "LIGHT" : "DARK"}</span>
+      </button>
+    </div>
   );
 }
 
@@ -204,7 +278,7 @@ const NAV_ITEMS: { id: Screen; label: string; code: string; badge?: number }[] =
   { id: "report", label: "Export", code: "06" },
 ];
 
-function Sidebar({ active, onNav }: { active: Screen; onNav: (s: Screen) => void }) {
+function Sidebar({ active, onNav, theme, onThemeChange }: { active: Screen; onNav: (s: Screen) => void; theme: Theme; onThemeChange: (theme: Theme) => void }) {
   const { isProcessing } = useAquaScan();
   return (
     <aside style={{
@@ -280,6 +354,7 @@ function Sidebar({ active, onNav }: { active: Screen; onNav: (s: Screen) => void
         <div className="font-mono" style={{ fontSize: 17, color: C.faint, marginTop: 6 }}>
           MARINE DRONE / EDGE UNIT
         </div>
+        <ThemeToggle theme={theme} onChange={onThemeChange} />
       </div>
     </aside>
   );
@@ -1306,6 +1381,7 @@ const GLOBAL_UI_STYLE = `
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
+  const [theme, setTheme] = useState<Theme>("dark");
   const [detections, setDetections] = useState<Detection[]>([]);
   const [scanImageUrl, setScanImageUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -1314,12 +1390,14 @@ export default function App() {
     isProcessing, setIsProcessing,
   };
 
+  C = theme === "dark" ? DARK_C : LIGHT_C;
+
   return (
   <AquaScanContext.Provider value={contextValue}>
     <style>{GLOBAL_UI_STYLE}</style>
     <style>{AQUASCAN_TYPOGRAPHY}</style>
-    <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", background: C.bg, color: C.navy, zoom: 1.20 }}>
-      <Sidebar active={screen} onNav={setScreen} />
+    <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", background: C.bg, color: C.navy, zoom: 1.20, transition: "background .2s, color .2s" }}>
+      <Sidebar active={screen} onNav={setScreen} theme={theme} onThemeChange={setTheme} />
 
       <main style={{ flex: 1, display: "flex", minWidth: 0, overflow: "hidden", background: C.bg }}>
         {screen === "home" && <HomeScreen onNav={setScreen} />}
