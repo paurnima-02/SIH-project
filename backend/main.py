@@ -2,7 +2,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-
+from geotag_utils import resolve_geotag
+from geo import nearest_nav_row
 from pathlib import Path
 from PIL import Image
 
@@ -1352,21 +1353,7 @@ async def predict_xtf(
     # SURVEY GPS
     # =====================================================
 
-    latitude = None
-    longitude = None
-
-    if nav_df is not None:
-
-        if not nav_df.empty:
-
-            latitude = float(
-                nav_df.iloc[0]["lat"]
-            )
-
-            longitude = float(
-                nav_df.iloc[0]["lon"]
-            )
-
+    
     # =====================================================
     # YOLO RESULTS - ACTUAL DRISHTI DETECTIONS
     # =====================================================
@@ -1386,6 +1373,16 @@ async def predict_xtf(
             x1, y1, x2, y2 = (
                 box.xyxy[0].tolist()
             )
+            # ---- per-detection GPS (Person 2's fix) ----
+            y_center = (y1 + y2) / 2
+
+            if nav_df is not None and not nav_df.empty:
+                nav_row = nearest_nav_row(nav_df, y_center)
+                latitude = float(nav_row["lat"])
+                longitude = float(nav_row["lon"])
+            else:
+                latitude = None
+                longitude = None
 
             class_name = result.names[class_id]
 
