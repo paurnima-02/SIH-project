@@ -4,41 +4,34 @@ import DebrisHeatmap from "./components/DebrisHeatmap";
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
-  // AquaScan — Light Coastal / Glass Theme
+  // AquaScan — Dark Sonar Command Center
+  bg: "#06111A",
+  card: "#0B1C29",
+  cardAlt: "#102838",
 
-  // Main surfaces
-  bg: "#EAF6F8",
-  card: "#F7FCFD",
+  border: "#1B3A4D",
+  borderMd: "#2A5870",
+  borderDk: "#132B3A",
 
-  // Borders
-  border: "#B9D8DF",
-  borderMd: "#8FC1CC",
-  borderDk: "#5E9EAD",
+  navy: "#E8F5F8",
+  navyMd: "#B8D5DF",
+  muted: "#7899A8",
+  faint: "#587584",
 
-  // Typography
-  navy: "#123F4B",
-  navyMd: "#286878",
-  muted: "#5F8995",
-  faint: "#8BAAB3",
+  blue: "#19C8F4",
+  blueBg: "#0B3446",
+  blueDim: "#177D9B",
 
-  // Primary interactive colour
-  blue: "#287E91",
-  blueBg: "#D7EDF2",
-  blueDim: "#73B4C1",
+  orange: "#FF9F43",
+  orangeBg: "#3B2918",
+  orangeDim: "#A96A26",
 
-  // High confidence / important
-  orange: "#F28A4B",
-  orangeBg: "#FFF0E6",
-  orangeDim: "#F6B17E",
+  green: "#25D6A5",
+  greenBg: "#0C3930",
+  greenDim: "#1B9B7A",
 
-  // Success
-  green: "#2EA66D",
-  greenBg: "#E3F6EC",
-  greenDim: "#73C69A",
-
-  // Alerts
-  redAlert: "#DF6670",
-  amberWarn: "#D99A32",
+  redAlert: "#FF5F6D",
+  amberWarn: "#FFC857",
 };
 
 
@@ -102,18 +95,19 @@ function Rule({ axis = "h" }: { axis?: "h" | "v" }) {
     : <div style={{ height: 1, background: C.border, width: "100%" }} />;
 }
 
-function Mono({ children, color, size = "11px" }: { children: React.ReactNode; color?: string; size?: string }) {
+function Mono({ children, color, size = "13px" }: { children: React.ReactNode; color?: string; size?: string }) {
   return (
+    <><style>{AQUASCAN_TYPOGRAPHY}</style>
     <span className="font-mono" style={{ fontSize: size, color: color || C.navy, letterSpacing: "-0.01em" }}>
       {children}
-    </span>
+    </span></>
   );
 }
 
 function Label({ children, caps }: { children: React.ReactNode; caps?: boolean }) {
   return (
     <span style={{
-      fontSize: 10, fontWeight: 500, color: C.muted, letterSpacing: caps ? ".08em" : ".02em",
+      fontSize: 18, fontWeight: 500, color: C.muted, letterSpacing: caps ? ".08em" : ".02em",
       textTransform: caps ? "uppercase" : "none",
     }}>
       {children}
@@ -126,7 +120,7 @@ function TierTag({ v }: { v: number }) {
   return (
     <span className="font-mono inline-flex items-center"
       style={{
-        fontSize: 10, fontWeight: 600, padding: "1px 5px",
+        fontSize: 18, fontWeight: 600, padding: "1px 5px",
         background: TIER_BG[t], color: TIER_COLOR[t],
         border: `1px solid ${TIER_COLOR[t]}44`,
         borderRadius: 2, letterSpacing: ".05em",
@@ -140,7 +134,7 @@ function TypeTag({ type, label }: { type: DebrisType; label?: string }) {
   return (
     <span className="font-mono inline-flex items-center"
       style={{
-        fontSize: 10, fontWeight: 500, padding: "1px 5px",
+        fontSize: 18, fontWeight: 500, padding: "1px 5px",
         background: C.bg, color: C.navyMd,
         border: `1px solid ${C.border}`, borderRadius: 2,
         letterSpacing: ".02em", whiteSpace: "nowrap",
@@ -174,13 +168,13 @@ function PanelBtn({ label, variant = "primary", small, onClick, disabled, icon }
     <button onClick={onClick} disabled={disabled}
       style={{
         ...s[variant],
-        fontSize: small ? 10 : 12, fontWeight: 500,
+        fontSize: small ? 12 : 14, fontWeight: 500,
         padding: small ? "2px 8px" : "4px 12px",
         borderRadius: 2, cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? .45 : 1, display: "inline-flex", alignItems: "center", gap: 4,
         transition: "opacity .1s",
       }}>
-      {icon && <span style={{ fontSize: 11 }}>{icon}</span>}{label}
+      {icon && <span style={{ fontSize: 17 }}>{icon}</span>}{label}
     </button>
   );
 }
@@ -194,7 +188,7 @@ function FieldRow({ label, value, mono }: { label: string; value: string; mono?:
       <Label>{label}</Label>
       {mono
         ? <Mono color={C.navyMd}>{value}</Mono>
-        : <span style={{ fontSize: 12, color: C.navy }}>{value}</span>}
+        : <span style={{ fontSize: 20, color: C.navy }}>{value}</span>}
     </div>
   );
 }
@@ -214,36 +208,32 @@ function Sidebar({ active, onNav }: { active: Screen; onNav: (s: Screen) => void
   const { isProcessing } = useAquaScan();
   return (
     <aside style={{
-  width: 176,
+  width: 250,
   flexShrink: 0,
   display: "flex",
   flexDirection: "column",
 
-  background: "rgba(240, 249, 251, 0.62)",
-  borderRight: "1px solid rgba(255, 255, 255, 0.55)",
-
-  backdropFilter: "blur(18px)",
-  WebkitBackdropFilter: "blur(18px)",
-
-  boxShadow: "6px 0 24px rgba(18, 63, 80, 0.10)",
+  background: C.card,
+  borderRight: `1px solid ${C.border}`,
+  boxShadow: "8px 0 28px rgba(0,0,0,.28)",
 }}>
       {/* Instrument header */}
       <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
           <SonarDial size={22} />
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, letterSpacing: ".04em" }}>AQUASCAN</div>
-            <div className="font-mono" style={{ fontSize: 9, color: C.muted, letterSpacing: ".06em" }}>FIELD TERMINAL</div>
+            <div style={{ fontSize: 21, fontWeight: 700, color: C.navy, letterSpacing: ".04em" }}>AQUASCAN</div>
+            <div className="font-mono" style={{ fontSize: 17, color: C.muted, letterSpacing: ".06em" }}>FIELD TERMINAL</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.border}` }}>
           <div style={{ flex: 1 }}>
-            <div className="font-mono" style={{ fontSize: 9, color: C.faint }}>MODEL</div>
-            <div className="font-mono" style={{ fontSize: 10, color: C.muted }}>YOLOv8n</div>
+            <div className="font-mono" style={{ fontSize: 17, color: C.faint }}>MODEL</div>
+            <div className="font-mono" style={{ fontSize: 18, color: C.muted }}>YOLOv8 SONAR</div>
           </div>
           <div>
-            <div className="font-mono" style={{ fontSize: 9, color: C.faint }}>UNIT</div>
-            <div className="font-mono" style={{ fontSize: 10, color: C.muted }}>MARINE DRONE</div>
+            <div className="font-mono" style={{ fontSize: 17, color: C.faint }}>UNIT</div>
+            <div className="font-mono" style={{ fontSize: 18, color: C.muted }}>MARINE DRONE</div>
           </div>
         </div>
       </div>
@@ -262,11 +252,11 @@ function Sidebar({ active, onNav }: { active: Screen; onNav: (s: Screen) => void
                 borderBottom: "none", borderTop: "none", borderRight: "none",
                 cursor: "pointer", transition: "background .1s",
               }}>
-              <span className="font-mono" style={{ fontSize: 9, color: on ? C.blue : C.borderDk, width: 16 }}>{n.code}</span>
-              <span style={{ fontSize: 12, fontWeight: on ? 500 : 400, color: on ? C.blue : C.muted, flex: 1 }}>{n.label}</span>
+              <span className="font-mono" style={{ fontSize: 17, color: on ? C.blue : C.borderDk, width: 16 }}>{n.code}</span>
+              <span style={{ fontSize: 20, fontWeight: on ? 500 : 400, color: on ? C.blue : C.muted, flex: 1 }}>{n.label}</span>
               {(n.badge || 0) > 0 && (
                 <span className="font-mono" style={{
-                  fontSize: 9, fontWeight: 600, padding: "0px 4px",
+                  fontSize: 17, fontWeight: 600, padding: "0px 4px",
                   background: C.orangeBg, color: C.orange, border: `1px solid ${C.orangeDim}`,
                   borderRadius: 2,
                 }}>{n.badge}</span>
@@ -281,13 +271,13 @@ function Sidebar({ active, onNav }: { active: Screen; onNav: (s: Screen) => void
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <StatusLED on={isProcessing} color={C.green} />
           <div>
-            <div className="font-mono" style={{ fontSize: 8, color: C.faint, letterSpacing: ".07em" }}>STATUS</div>
-            <div className="font-mono" style={{ fontSize: 10, color: C.navyMd }}>
+            <div className="font-mono" style={{ fontSize: 16, color: C.faint, letterSpacing: ".07em" }}>STATUS</div>
+            <div className="font-mono" style={{ fontSize: 18, color: C.navyMd }}>
               {isProcessing ? "ACTIVE" : "IDLE"}
             </div>
           </div>
         </div>
-        <div className="font-mono" style={{ fontSize: 9, color: C.faint, marginTop: 6 }}>
+        <div className="font-mono" style={{ fontSize: 17, color: C.faint, marginTop: 6 }}>
           MARINE DRONE / EDGE UNIT
         </div>
       </div>
@@ -313,12 +303,10 @@ function Panel({ children, style }: { children: React.ReactNode; style?: React.C
   return (
     <div
       style={{
-        background: "rgba(245, 252, 253, 0.68)",
-        border: "1px solid rgba(255, 255, 255, 0.55)",
-        borderRadius: 16,
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        boxShadow: "0 8px 28px rgba(18, 63, 80, 0.12)",
+        background: C.card,
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        boxShadow: "0 8px 24px rgba(0,0,0,.22)",
         overflow: "hidden",
         ...style,
       }}
@@ -336,8 +324,8 @@ function PanelHead({ title, sub, right }: { title: string; sub?: string; right?:
       background: C.bg,
     }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: C.navy, letterSpacing: ".01em" }}>{title}</span>
-        {sub && <span className="font-mono" style={{ fontSize: 9, color: C.faint }}>{sub}</span>}
+        <span style={{ fontSize: 19, fontWeight: 600, color: C.navy, letterSpacing: ".01em" }}>{title}</span>
+        {sub && <span className="font-mono" style={{ fontSize: 17, color: C.faint }}>{sub}</span>}
       </div>
       {right}
     </div>
@@ -351,12 +339,20 @@ function HomeScreen({ onNav }: { onNav: (s: Screen) => void }) {
   const med = DETS.filter(d => tier(d.confidence) === "medium");
 
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: 12 }}>
+    <div style={{
+      flex: 1,
+      minHeight: 0,
+      overflow: "auto",
+      padding: 22,
+      background: C.bg,
+      display: "flex",
+      flexDirection: "column",
+    }}>
       {/* Page header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Mission Dashboard</div>
-          <div className="font-mono" style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+          <div style={{ fontSize: 32, fontWeight: 700, color: C.navy }}>Mission Dashboard</div>
+          <div className="font-mono" style={{ fontSize: 21, color: C.muted, marginTop: 2 }}>
             Results from the current inference session
           </div>
         </div>
@@ -364,31 +360,38 @@ function HomeScreen({ onNav }: { onNav: (s: Screen) => void }) {
       </div>
 
       {/* Top stat row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 12 }}>
         {[
           { label: "Detections", value: String(DETS.length), unit: "objects", note: "current session", color: C.navy },
           { label: "High-Priority", value: String(high.length), unit: "≥75% conf.", note: "requires action", color: C.orange },
           { label: "Pending Review", value: String(med.length), unit: "40–74% conf.", note: "40–74% confidence", color: C.amberWarn },
         ].map(s => (
-          <Panel key={s.label} style={{ padding: "8px 10px" }}>
+          <Panel key={s.label} style={{ padding: "14px 16px" }}>
             <Label caps>{s.label}</Label>
             <div style={{ marginTop: 4 }}>
-              <span className="font-mono" style={{ fontSize: 22, fontWeight: 600, color: s.color, lineHeight: 1 }}>{s.value}</span>
-              <span className="font-mono" style={{ fontSize: 10, color: C.faint, marginLeft: 4 }}>{s.unit}</span>
+              <span className="font-mono" style={{ fontSize: 44, fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.value}</span>
+              <span className="font-mono" style={{ fontSize: 18, color: C.faint, marginLeft: 4 }}>{s.unit}</span>
             </div>
-            <div style={{ fontSize: 10, color: C.faint, marginTop: 2 }}>{s.note}</div>
+            <div style={{ fontSize: 18, color: C.faint, marginTop: 2 }}>{s.note}</div>
           </Panel>
         ))}
       </div>
 
       {/* Main grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 280px 240px", gap: 8 }}>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) 320px 280px",
+        gap: 12,
+        flex: 1,
+        minHeight: "calc(100vh - 230px)",
+        alignItems: "stretch",
+      }}>
 
         {/* Detection table */}
         <Panel>
           <PanelHead title="Recent Detections" sub={DETS.length ? "Current session" : "No scan loaded"}
             right={
-              <button style={{ fontSize: 11, color: C.blue, background: "none", border: "none", cursor: "pointer" }}
+              <button style={{ fontSize: 19, color: C.blue, background: "none", border: "none", cursor: "pointer" }}
                 onClick={() => onNav("viewer")}>Viewer →</button>
             } />
           <DetTable dets={DETS} compact />
@@ -412,11 +415,11 @@ function HomeScreen({ onNav }: { onNav: (s: Screen) => void }) {
           <PanelHead title="Session Status" />
           <div style={{ padding: "10px" }}>
             {DETS.length === 0 ? (
-              <div style={{ fontSize: 11, color: C.faint }}>Upload a sonar image and run inference to begin.</div>
+              <div style={{ fontSize: 19, color: C.faint }}>Upload a sonar image and run inference to begin.</div>
             ) : (
               <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <StatusLED on color={C.green} />
-                <span style={{ fontSize: 11, color: C.navyMd }}>Inference results available</span>
+                <span style={{ fontSize: 19, color: C.navyMd }}>Inference results available</span>
               </div>
             )}
           </div>
@@ -435,7 +438,7 @@ function DetTable({ dets, compact }: { dets: Detection[]; compact?: boolean }) {
           {["ID", "Type", "Conf.", "Scan", "Time"].map(h => (
             <th key={h} style={{
               padding: `4px ${compact ? 8 : 10}px`, textAlign: "left",
-              fontSize: 9, fontWeight: 600, color: C.muted, letterSpacing: ".07em",
+              fontSize: 17, fontWeight: 600, color: C.muted, letterSpacing: ".07em",
               textTransform: "uppercase", borderBottom: `1px solid ${C.border}`
             }}>
               {h}
@@ -539,11 +542,11 @@ function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 8, maxWidth: 1100 }}>
         <div>
           <div style={{ marginBottom: 8 }}>
-  <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>
+  <div style={{ fontSize: 24, fontWeight: 600, color: C.navy }}>
     Data Ingest
   </div>
 
-  <div className="font-mono" style={{ fontSize: 10, color: C.muted }}>
+  <div className="font-mono" style={{ fontSize: 18, color: C.muted }}>
     Upload sonar data for processing
   </div>
 
@@ -573,7 +576,7 @@ function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
       }}
     >
       🖼 Sonar Image
-      <div className="font-mono" style={{ fontSize: 9, marginTop: 3, fontWeight: 400 }}>
+      <div className="font-mono" style={{ fontSize: 17, marginTop: 3, fontWeight: 400 }}>
         PNG / JPG / JPEG
       </div>
     </button>
@@ -597,7 +600,7 @@ function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
       }}
     >
       📡 XTF Log
-      <div className="font-mono" style={{ fontSize: 9, marginTop: 3, fontWeight: 400 }}>
+      <div className="font-mono" style={{ fontSize: 17, marginTop: 3, fontWeight: 400 }}>
         .XTF sonar log
       </div>
     </button>
@@ -622,17 +625,17 @@ function UploadScreen({ onNav }: { onNav: (s: Screen) => void }) {
 
 <SonarDial size={36} />
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: dragging ? C.blue : C.navyMd }}>{dragging ? "Release to add files" : "Drop sonar images here"}</div>
-                <div className="font-mono" style={{ fontSize: 10, color: C.faint, marginTop: 3 }}>.png  .jpg  .jpeg .XTF — or <span style={{ color: C.blue, textDecoration: "underline" }}>browse</span></div>
+                <div style={{ fontSize: 21, fontWeight: 500, color: dragging ? C.blue : C.navyMd }}>{dragging ? "Release to add files" : "Drop sonar images here"}</div>
+                <div className="font-mono" style={{ fontSize: 18, color: C.faint, marginTop: 3 }}>.png  .jpg  .jpeg .XTF — or <span style={{ color: C.blue, textDecoration: "underline" }}>browse</span></div>
               </div>
             </div>
           </Panel>
-          {error && <div style={{ marginTop: 8, padding: "7px 9px", background: C.orangeBg, color: C.redAlert, border: `1px solid ${C.orangeDim}`, fontSize: 11 }}>{error}</div>}
+          {error && <div style={{ marginTop: 8, padding: "7px 9px", background: C.orangeBg, color: C.redAlert, border: `1px solid ${C.orangeDim}`, fontSize: 17 }}>{error}</div>}
           {files.length > 0 && (
             <Panel style={{ marginTop: 8 }}>
               <PanelHead title={`Inference Queue (${files.length})`} right={<PanelBtn label="Run YOLO Inference" variant="orange" small onClick={runAll} disabled={files.some(f => f.status === "running")} />} />
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr style={{ background: C.bg }}>{["Filename", "Format", "Size", "Status"].map(h => <th key={h} style={{ padding: "4px 8px", textAlign: "left", fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: ".07em", textTransform: "uppercase", borderBottom: `1px solid ${C.border}` }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: C.bg }}>{["Filename", "Format", "Size", "Status"].map(h => <th key={h} style={{ padding: "4px 8px", textAlign: "left", fontSize: 17, color: C.muted, fontWeight: 600, letterSpacing: ".07em", textTransform: "uppercase", borderBottom: `1px solid ${C.border}` }}>{h}</th>)}</tr></thead>
                 <tbody>{files.map((f, i) => <tr key={`${f.name}-${i}`} style={{ borderBottom: `1px solid ${C.border}` }}>
                   <td style={{ padding: "6px 8px" }}><Mono color={C.navy} size="11px">{f.name}</Mono></td>
                   <td style={{ padding: "6px 8px" }}><Mono color={C.blue}>{f.format}</Mono></td>
@@ -672,7 +675,7 @@ function ViewerScreen() {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div>
-            <span style={{ fontSize: 12, fontWeight: 600, color: C.navy }}>
+            <span style={{ fontSize: 20, fontWeight: 600, color: C.navy }}>
               {DETS[0]?.scanId || "Current scan"}
             </span>
           </div>
@@ -756,7 +759,7 @@ function SurveyScreen() {
   const location = DETS.find(d => d.latitude != null && d.longitude != null);
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#EEF6FA" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.bg }}>
       {/* Survey toolbar */}
       <div style={{
         height: 36, flexShrink: 0, display: "flex", alignItems: "center", gap: 4,
@@ -773,17 +776,17 @@ function SurveyScreen() {
             border: `1px solid ${filter === key ? C.blueDim : C.border}`,
             background: filter === key ? C.blueBg : C.card,
             color: filter === key ? C.blue : C.muted,
-            borderRadius: 2, padding: "3px 7px", fontSize: 9, cursor: "pointer"
+            borderRadius: 2, padding: "3px 7px", fontSize: 17, cursor: "pointer"
           }}>{label}</button>
         ))}
-        <div style={{ marginLeft: "auto", fontSize: 9, color: C.faint }} className="font-mono">
+        <div style={{ marginLeft: "auto", fontSize: 17, color: C.faint }} className="font-mono">
           {location ? `${location.latitude!.toFixed(6)}°, ${location.longitude!.toFixed(6)}°` : "NAVIGATION DATA UNAVAILABLE"}
         </div>
       </div>
 
       {/* Survey plot */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, #F3F9FC 0%, #E8F3F8 100%)" }} />
+        <div style={{ position: "absolute", inset: 0, background: `linear-gradient(180deg, ${C.bg} 0%, #091B28 100%)` }} />
 
         {/* Grid */}
         <div style={{ position: "absolute", inset: 0, opacity: .55,
@@ -828,20 +831,20 @@ function SurveyScreen() {
         {/* Empty state */}
         {DETS.length === 0 && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ padding: "12px 16px", background: "rgba(255,255,255,.92)", border: `1px solid ${C.border}`, textAlign: "center" }}>
-              <div style={{ fontSize: 12, color: C.navyMd, fontWeight: 600 }}>No survey detections</div>
-              <div className="font-mono" style={{ fontSize: 9, color: C.faint, marginTop: 3 }}>Run YOLO inference from Ingest to populate this survey.</div>
+            <div style={{ padding: "12px 16px", background: C.card, border: `1px solid ${C.border}`, textAlign: "center" }}>
+              <div style={{ fontSize: 20, color: C.navyMd, fontWeight: 600 }}>No survey detections</div>
+              <div className="font-mono" style={{ fontSize: 17, color: C.faint, marginTop: 3 }}>Run YOLO inference from Ingest to populate this survey.</div>
             </div>
           </div>
         )}
 
         {/* Axis labels */}
-        <div className="font-mono" style={{ position: "absolute", left: 14, top: 12, fontSize: 9, color: C.faint }}>N ↑</div>
-        <div className="font-mono" style={{ position: "absolute", right: 14, bottom: 12, fontSize: 9, color: C.faint }}>RELATIVE SCAN POSITION</div>
+        <div className="font-mono" style={{ position: "absolute", left: 14, top: 12, fontSize: 17, color: C.faint }}>N ↑</div>
+        <div className="font-mono" style={{ position: "absolute", right: 14, bottom: 12, fontSize: 17, color: C.faint }}>RELATIVE SCAN POSITION</div>
 
         {/* Bottom-left mission status */}
-        <div style={{ position: "absolute", left: 10, bottom: 10, width: 180, background: "rgba(255,255,255,.94)", border: `1px solid ${C.border}` }}>
-          <div style={{ padding: "6px 8px", borderBottom: `1px solid ${C.border}`, fontSize: 9, fontWeight: 600, color: C.navy }}>SURVEY STATUS</div>
+        <div style={{ position: "absolute", left: 10, bottom: 10, width: 180, background: C.card, border: `1px solid ${C.border}` }}>
+          <div style={{ padding: "6px 8px", borderBottom: `1px solid ${C.border}`, fontSize: 17, fontWeight: 600, color: C.navy }}>SURVEY STATUS</div>
           <div style={{ padding: "7px 8px" }}>
             <FieldRow label="UNIT" value="MARINE DRONE" mono />
             <FieldRow label="STATUS" value={isProcessing ? "PROCESSING" : DETS.length ? "COMPLETE" : "IDLE"} mono />
@@ -850,19 +853,19 @@ function SurveyScreen() {
         </div>
 
         {/* Bottom-right confidence legend */}
-        <div style={{ position: "absolute", right: 10, bottom: 10, width: 155, background: "rgba(255,255,255,.94)", border: `1px solid ${C.border}` }}>
-          <div style={{ padding: "6px 8px", borderBottom: `1px solid ${C.border}`, fontSize: 9, fontWeight: 600, color: C.navy }}>CONFIDENCE TIER</div>
+        <div style={{ position: "absolute", right: 10, bottom: 10, width: 155, background: C.card, border: `1px solid ${C.border}` }}>
+          <div style={{ padding: "6px 8px", borderBottom: `1px solid ${C.border}`, fontSize: 17, fontWeight: 600, color: C.navy }}>CONFIDENCE TIER</div>
           <div style={{ padding: "7px 8px", display: "flex", flexDirection: "column", gap: 5 }}>
             {(["high", "medium", "low"] as ConfTier[]).map(t => (
               <div key={t} style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: TIER_COLOR[t] }} />
-                <span style={{ fontSize: 9, color: C.muted, flex: 1 }}>{t === "high" ? "High risk" : t === "medium" ? "Review required" : "Low risk"}</span>
+                <span style={{ fontSize: 17, color: C.muted, flex: 1 }}>{t === "high" ? "High risk" : t === "medium" ? "Review required" : "Low risk"}</span>
                 <Mono color={C.faint} size="8px">{t === "high" ? "≥75%" : t === "medium" ? "40–74%" : "<40%"}</Mono>
               </div>
             ))}
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
               <span style={{ width: 16, borderTop: `1px dashed ${C.blue}` }} />
-              <span style={{ fontSize: 9, color: C.muted }}>Survey track</span>
+              <span style={{ fontSize: 17, color: C.muted }}>Survey track</span>
             </div>
           </div>
         </div>
@@ -889,7 +892,7 @@ function ToolToggle({ label, on, onChange, disabled, color }:
           borderRadius: "50%", background: "#fff", transition: "left .15s"
         }} />
       </div>
-      <span style={{ fontSize: 11, color: on ? a : C.muted }}>{label}</span>
+      <span style={{ fontSize: 19, color: on ? a : C.muted }}>{label}</span>
     </label>
   );
 }
@@ -916,7 +919,7 @@ function SonarCanvas({ dets, selId, onSel, showBoxes, imageUrl }:
       )}
       {!isRealImage && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-          <div style={{ padding: "8px 12px", background: "rgba(4,12,20,.92)", border: `1px solid ${C.borderDk}`, color: C.muted, fontSize: 11 }}>
+          <div style={{ padding: "8px 12px", background: "rgba(4,12,20,.92)", border: `1px solid ${C.borderDk}`, color: C.muted, fontSize: 17 }}>
             {imageUrl ? "Unable to preview this image. Upload JPG or PNG." : "No scan image loaded. Upload a JPG or PNG to begin."}
           </div>
         </div>
@@ -941,7 +944,7 @@ function SonarCanvas({ dets, selId, onSel, showBoxes, imageUrl }:
               background: "rgba(4,12,20,.88)", border: `1px solid ${col}55`,
               padding: "1px 6px", borderRadius: 2, whiteSpace: "nowrap"
             }}>
-              <span className="font-mono" style={{ fontSize: 9, fontWeight: 600, color: col }}>
+              <span className="font-mono" style={{ fontSize: 17, fontWeight: 600, color: col }}>
                 {d.confidence}% {d.label || TYPE_LABEL[d.type]}
               </span>
             </div>
@@ -1050,7 +1053,7 @@ function ReportScreen() {
             .meta { color: #5B6770; font-size: 12px; margin-bottom: 16px; }
             table { width: 100%; border-collapse: collapse; font-size: 11px; }
             th, td { border: 1px solid #E1E7EA; padding: 6px 8px; text-align: left; }
-            th { background: #F7F9FA; text-transform: uppercase; font-size: 9px; letter-spacing: .05em; }
+            th { background: #0B1C29; text-transform: uppercase; font-size: 9px; letter-spacing: .05em; }
           </style>
         </head>
         <body>
@@ -1121,8 +1124,8 @@ function ReportScreen() {
                 }}>
                   <input type="radio" checked={fmt === f} onChange={() => setFmt(f)}
                     style={{ accentColor: C.blue }} />
-                  <span className="font-mono" style={{ fontSize: 11, color: fmt === f ? C.blue : C.muted }}>{f}</span>
-                  <span style={{ fontSize: 10, color: C.faint, marginLeft: "auto" }}>
+                  <span className="font-mono" style={{ fontSize: 19, color: fmt === f ? C.blue : C.muted }}>{f}</span>
+                  <span style={{ fontSize: 18, color: C.faint, marginLeft: "auto" }}>
                     {f === "CSV" ? "tabular" : f === "JSON" ? "machine" : f === "GeoJSON" ? "spatial" : "formatted"}
                   </span>
                 </label>
@@ -1141,7 +1144,7 @@ function ReportScreen() {
                   <input type="checkbox" checked={fields[k]}
                     onChange={e => setFields(prev => ({ ...prev, [k]: e.target.checked }))}
                     style={{ accentColor: C.blue }} />
-                  <span style={{ fontSize: 11, color: fields[k] ? C.navy : C.faint }}>{FIELD_LABELS[k]}</span>
+                  <span style={{ fontSize: 19, color: fields[k] ? C.navy : C.faint }}>{FIELD_LABELS[k]}</span>
                 </label>
               ))}
             </div>
@@ -1162,7 +1165,7 @@ function ReportScreen() {
                   <input type="radio" name="scope" checked={scope === k}
                     onChange={() => setScope(k as typeof scope)}
                     style={{ accentColor: C.blue }} />
-                  <span style={{ fontSize: 11, color: C.muted }}>{l}</span>
+                  <span style={{ fontSize: 19, color: C.muted }}>{l}</span>
                 </label>
               ))}
             </div>
@@ -1182,7 +1185,7 @@ function ReportScreen() {
             style={{
               width: "100%", background: dl ? C.blueBg : C.blue, color: dl ? C.blue : "#fff",
               border: `1px solid ${C.blue}`, borderRadius: 2, padding: "6px",
-              fontSize: 12, fontWeight: 500, cursor: sorted.length === 0 ? "not-allowed" : "pointer",
+              fontSize: 20, fontWeight: 500, cursor: sorted.length === 0 ? "not-allowed" : "pointer",
               opacity: sorted.length === 0 ? 0.5 : 1, transition: "all .15s",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             }}>
@@ -1192,7 +1195,7 @@ function ReportScreen() {
                   width: 10, height: 10, border: `1.5px solid ${C.blue}`,
                   borderTopColor: "transparent", borderRadius: "50%"
                 }} />
-                <span className="font-mono" style={{ fontSize: 10 }}>Preparing…</span>
+                <span className="font-mono" style={{ fontSize: 16 }}>Preparing…</span>
               </>
             ) : `↓ Export ${fmt}`}
           </button>
@@ -1203,7 +1206,7 @@ function ReportScreen() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <PanelHead title="Preview" sub={`${sorted.length} records · ${COLS.length} fields · scope: ${scope}`}
           right={
-            <span className="font-mono" style={{ fontSize: 9, color: C.faint }}>
+            <span className="font-mono" style={{ fontSize: 17, color: C.faint }}>
               {fmt} preview
             </span>
           } />
@@ -1215,7 +1218,7 @@ function ReportScreen() {
                   <th key={k} onClick={() => doSort(k)}
                     style={{
                       padding: "5px 10px", textAlign: "left", cursor: "pointer",
-                      fontSize: 9, fontWeight: 600, color: sortKey === k ? C.blue : C.muted,
+                      fontSize: 17, fontWeight: 600, color: sortKey === k ? C.blue : C.muted,
                       letterSpacing: ".07em", textTransform: "uppercase",
                       borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap"
                     }}>
@@ -1260,14 +1263,14 @@ function SpatialViewScreen() {
     border: `1px solid ${on ? C.navyMd : C.borderMd}`,
     background: on ? C.navyMd : C.card,
     color: on ? C.bg : C.muted,
-    padding: "7px 12px", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 600,
+    padding: "7px 12px", borderRadius: 8, cursor: "pointer", fontSize: 19, fontWeight: 600,
   });
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: 18, background: "transparent" }}>
+    <div style={{ flex: 1, overflow: "auto", padding: 18, background: C.bg }}>
       <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-        <div className="font-mono" style={{ fontSize: 9, color: C.muted, letterSpacing: ".12em" }}>SPATIAL INTELLIGENCE</div>
-        <h1 style={{ margin: "6px 0 4px", fontSize: 25, color: C.navy }}>Spatial View</h1>
-        <p style={{ margin: 0, color: C.muted, fontSize: 12 }}>Explore mapped detections spatially. AR remains a preview until the camera/GPS module is connected.</p>
+        <div className="font-mono" style={{ fontSize: 17, color: C.muted, letterSpacing: ".12em" }}>SPATIAL INTELLIGENCE</div>
+        <h1 style={{ margin: "6px 0 4px", fontSize: 36, color: C.navy }}>Spatial View</h1>
+        <p style={{ margin: 0, color: C.muted, fontSize: 18 }}>Explore mapped detections spatially. AR remains a preview until the camera/GPS module is connected.</p>
         <div style={{ display: "flex", gap: 6, margin: "16px 0 10px" }}>
           <button onClick={() => setTab("3d")} style={tabStyle(tab === "3d")}>3D View</button>
           <button onClick={() => setTab("ar")} style={tabStyle(tab === "ar")}>AR Preview</button>
@@ -1276,10 +1279,10 @@ function SpatialViewScreen() {
           <div style={{ position: "absolute", inset: 0, background: `linear-gradient(180deg, ${C.card}, ${C.blueBg})` }} />
           {tab === "3d" ? <>
             <div style={{ position: "absolute", inset: "18% 8% 0", opacity: .5, transform: "perspective(620px) rotateX(58deg)", transformOrigin: "bottom", backgroundImage: `linear-gradient(${C.borderMd} 1px, transparent 1px),linear-gradient(90deg, ${C.borderMd} 1px, transparent 1px)`, backgroundSize: "48px 48px" }} />
-            {[['31%','53%','Bottle','CONFIRMED'],['56%','66%','Ghost Net','DRIFTING'],['76%','58%','Tire','STATIONARY']].map(([x,y,name,status]) => <div key={name} style={{ position:'absolute', left:x, top:y, transform:'translate(-50%,-50%)' }}><div style={{ background:C.card, border:`1px solid ${C.borderMd}`, borderRadius:9, padding:'7px 10px', boxShadow:'0 5px 18px rgba(29,53,57,.10)' }}><b style={{fontSize:11,color:C.navy}}>{name}</b><div className="font-mono" style={{fontSize:8,color:C.muted,marginTop:2}}>{status}</div></div><div style={{width:12,height:12,borderRadius:'50%',background:C.navyMd,border:`3px solid ${C.card}`,margin:'5px auto 0'}} /></div>)}
-            <div style={{ position:'absolute', left:'50%', top:38, transform:'translateX(-50%)', textAlign:'center', color:C.navyMd }}><SonarDial size={34}/><div className="font-mono" style={{fontSize:8,marginTop:5}}>SURVEY VESSEL</div></div>
-          </> : <div style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:'min(440px,80%)', textAlign:'center' }}><div style={{width:64,height:64,borderRadius:18,border:`1px solid ${C.borderMd}`,display:'grid',placeItems:'center',margin:'0 auto 14px',fontSize:25,color:C.navyMd}}>AR</div><h2 style={{color:C.navy,margin:'0 0 8px'}}>AR Preview</h2><p style={{color:C.muted,lineHeight:1.6,fontSize:12}}>Camera + GPS detection overlays will appear here when the AR module is connected. This is intentionally a frontend preview, not a simulated live feed.</p></div>}
-          <div style={{position:'absolute',right:14,top:14,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',color:C.muted,fontSize:10}}><b style={{color:C.navy}}>Layers</b><div style={{marginTop:6}}>✓ Survey path</div><div>✓ Detections</div><div>✓ Labels</div><div>○ Depth grid</div></div>
+            {[['31%','53%','Bottle','CONFIRMED'],['56%','66%','Ghost Net','DRIFTING'],['76%','58%','Tire','STATIONARY']].map(([x,y,name,status]) => <div key={name} style={{ position:'absolute', left:x, top:y, transform:'translate(-50%,-50%)' }}><div style={{ background:C.card, border:`1px solid ${C.borderMd}`, borderRadius:9, padding:'7px 10px', boxShadow:'0 5px 18px rgba(29,53,57,.10)' }}><b style={{fontSize: 17,color:C.navy}}>{name}</b><div className="font-mono" style={{fontSize: 14,color:C.muted,marginTop:2}}>{status}</div></div><div style={{width:12,height:12,borderRadius:'50%',background:C.navyMd,border:`3px solid ${C.card}`,margin:'5px auto 0'}} /></div>)}
+            <div style={{ position:'absolute', left:'50%', top:38, transform:'translateX(-50%)', textAlign:'center', color:C.navyMd }}><SonarDial size={34}/><div className="font-mono" style={{fontSize: 14,marginTop:5}}>SURVEY VESSEL</div></div>
+          </> : <div style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:'min(440px,80%)', textAlign:'center' }}><div style={{width:64,height:64,borderRadius:18,border:`1px solid ${C.borderMd}`,display:'grid',placeItems:'center',margin:'0 auto 14px',fontSize: 29,color:C.navyMd}}>AR</div><h2 style={{color:C.navy,margin:'0 0 8px'}}>AR Preview</h2><p style={{color:C.muted,lineHeight:1.6,fontSize: 18}}>Camera + GPS detection overlays will appear here when the AR module is connected. This is intentionally a frontend preview, not a simulated live feed.</p></div>}
+          <div style={{position:'absolute',right:14,top:14,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',color:C.muted,fontSize: 16}}><b style={{color:C.navy}}>Layers</b><div style={{marginTop:6}}>✓ Survey path</div><div>✓ Detections</div><div>✓ Labels</div><div>○ Depth grid</div></div>
         </div>
       </div>
     </div>
@@ -1287,6 +1290,20 @@ function SpatialViewScreen() {
 }
 
 // ─── Shell ─────────────────────────────────────────────────────────────────────
+
+const AQUASCAN_TYPOGRAPHY = `
+  .aquascan-ui { font-size: 16px; }
+  .aquascan-ui button, .aquascan-ui input, .aquascan-ui select { font-size: 15px; }
+  .aquascan-ui table { font-size: 14px; }
+  .aquascan-ui .font-mono { line-height: 1.45; }
+`;
+
+const GLOBAL_UI_STYLE = `
+  .aquascan-ui { font-size: 19px; }
+  .aquascan-ui button, .aquascan-ui input, .aquascan-ui select { font-size: 17px; }
+  .aquascan-ui table { font-size: 16px; }
+`;
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
   const [detections, setDetections] = useState<Detection[]>([]);
@@ -1299,10 +1316,12 @@ export default function App() {
 
   return (
   <AquaScanContext.Provider value={contextValue}>
-    <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", background: "transparent" }}>
+    <style>{GLOBAL_UI_STYLE}</style>
+    <style>{AQUASCAN_TYPOGRAPHY}</style>
+    <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", background: C.bg, color: C.navy, zoom: 1.20 }}>
       <Sidebar active={screen} onNav={setScreen} />
 
-      <main style={{ flex: 1, display: "flex", minWidth: 0, overflow: "hidden" }}>
+      <main style={{ flex: 1, display: "flex", minWidth: 0, overflow: "hidden", background: C.bg }}>
         {screen === "home" && <HomeScreen onNav={setScreen} />}
         {screen === "survey" && <SurveyScreen />}
         {screen === "upload" && <UploadScreen onNav={setScreen} />}
