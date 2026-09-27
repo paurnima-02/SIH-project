@@ -11,6 +11,7 @@ import shutil
 import uuid
 import cv2
 import json
+import csv
 import math
 import sys
 
@@ -780,6 +781,75 @@ def get_detection_report(
         "detections":
             report
     }
+
+
+# =========================================================
+# CSV DETECTION REPORT
+# =========================================================
+
+@app.get("/detections/report.csv")
+def download_detection_csv(
+    db: Session = Depends(get_db)
+):
+    detections = db.query(
+        Detection
+    ).order_by(
+        Detection.created_at.desc()
+    ).all()
+
+    csv_path = RESULT_DIR / "detection_report.csv"
+
+    fieldnames = [
+        "detection_id",
+        "class",
+        "confidence",
+        "latitude",
+        "longitude",
+        "dimensions",
+        "survey_id",
+        "status",
+        "missed_cycles",
+        "last_seen",
+        "created_at",
+        "updated_at"
+    ]
+
+    with open(
+        csv_path,
+        "w",
+        newline="",
+        encoding="utf-8"
+    ) as csvfile:
+
+        writer = csv.DictWriter(
+            csvfile,
+            fieldnames=fieldnames
+        )
+
+        writer.writeheader()
+
+        for detection in detections:
+            writer.writerow({
+                "detection_id": detection.id,
+                "class": detection.class_name,
+                "confidence": detection.confidence,
+                "latitude": detection.latitude,
+                "longitude": detection.longitude,
+                "dimensions": detection.dimensions,
+                "survey_id": detection.survey_id,
+                "status": detection.status,
+                "missed_cycles": detection.missed_cycles,
+                "last_seen": detection.last_seen,
+                "created_at": detection.created_at,
+                "updated_at": detection.updated_at
+            })
+
+    return FileResponse(
+        path=csv_path,
+        media_type="text/csv",
+        filename="detection_report.csv"
+    )
+
 
 
 # =========================================================
