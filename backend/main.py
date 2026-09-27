@@ -110,7 +110,7 @@ app.add_middleware(
 
 app.mount(
     "/ar",
-    StaticFiles(directory="../frontend/ar", html=True),
+    StaticFiles(directory=str(ROOT_DIR / "frontend" / "ar"), html=True),
     name="ar"
 )
 
@@ -1368,35 +1368,26 @@ async def predict_xtf(
             )
 
     # =====================================================
-    # YOLO RESULTS
+    # YOLO RESULTS - ACTUAL DRISHTI DETECTIONS
     # =====================================================
 
     for result in results:
 
+        # YOLO draws the actual model bounding boxes and labels.
         annotated_image = result.plot()
 
-        cv2.imwrite(
-            str(result_path),
-            annotated_image
-        )
-
+        # Process only real detections returned by DRISHTI.
         for box in result.boxes:
 
-            class_id = int(
-                box.cls[0]
-            )
+            class_id = int(box.cls[0])
 
-            confidence = float(
-                box.conf[0]
-            )
+            confidence = float(box.conf[0])
 
             x1, y1, x2, y2 = (
                 box.xyxy[0].tolist()
             )
 
-            class_name = (
-                result.names[class_id]
-            )
+            class_name = result.names[class_id]
 
             confidence_value = round(
                 confidence,
@@ -1411,6 +1402,20 @@ async def predict_xtf(
             bbox_height = round(
                 y2 - y1,
                 2
+            )
+
+            print(
+                "[XTF] ACTUAL DETECTION:",
+                {
+                    "class": class_name,
+                    "confidence": confidence_value,
+                    "bbox": [
+                        round(x1, 2),
+                        round(y1, 2),
+                        round(x2, 2),
+                        round(y2, 2)
+                    ]
+                }
             )
 
             # =================================================
@@ -1478,11 +1483,20 @@ async def predict_xtf(
                     latitude,
 
                 "longitude":
-                    longitude
+                    longitude,
+
+                "demo":
+                    False
             })
 
+        # Save the final annotated waterfall.
+        cv2.imwrite(
+            str(result_path),
+            annotated_image
+        )
+
     # =====================================================
-    # SAVE DATABASE
+    
     # =====================================================
 
     try:
