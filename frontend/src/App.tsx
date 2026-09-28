@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useRef, useCallback } from "react";
 import { predictImage } from "./api";
 import DebrisHeatmap from "./components/DebrisHeatmap";
-
+import ThreeDViewer from "./components/Spatial3DViewer";
+import ARPreview from "./components/ARPreview";
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 type Theme = "dark" | "light";
 
@@ -1334,36 +1335,188 @@ function ReportScreen() {
 // ─── Spatial View ──────────────────────────────────────────────────────────────
 function SpatialViewScreen() {
   const [tab, setTab] = useState<"3d" | "ar">("3d");
-  const tabStyle = (on: boolean): React.CSSProperties => ({
-    border: `1px solid ${on ? C.navyMd : C.borderMd}`,
-    background: on ? C.navyMd : C.card,
-    color: on ? C.bg : C.muted,
-    padding: "7px 12px", borderRadius: 8, cursor: "pointer", fontSize: 19, fontWeight: 600,
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    padding: "8px 14px",
+    borderRadius: 8,
+    border: `1px solid ${C.borderMd}`,
+    background: active ? C.navy : C.card,
+    color: active ? "#ffffff" : C.navyMd,
+    cursor: "pointer",
+    fontSize: 16,
+    fontWeight: 600,
   });
+
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: 18, background: C.bg }}>
-      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-        <div className="font-mono" style={{ fontSize: 17, color: C.muted, letterSpacing: ".12em" }}>SPATIAL INTELLIGENCE</div>
-        <h1 style={{ margin: "6px 0 4px", fontSize: 36, color: C.navy }}>Spatial View</h1>
-        <p style={{ margin: 0, color: C.muted, fontSize: 18 }}>Explore mapped detections spatially. AR remains a preview until the camera/GPS module is connected.</p>
-        <div style={{ display: "flex", gap: 6, margin: "16px 0 10px" }}>
-          <button onClick={() => setTab("3d")} style={tabStyle(tab === "3d")}>3D View</button>
-          <button onClick={() => setTab("ar")} style={tabStyle(tab === "ar")}>AR Preview</button>
+    <div
+      style={{
+        flex: 1,
+        overflow: "auto",
+        padding: 18,
+        background: C.bg,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1180,
+          margin: "0 auto",
+        }}
+      >
+        {/* ================= HEADER ================= */}
+
+        <div
+          className="font-mono"
+          style={{
+            fontSize: 17,
+            color: C.muted,
+            letterSpacing: ".12em",
+          }}
+        >
+          SPATIAL INTELLIGENCE
         </div>
-        <div style={{ minHeight: 560, position: "relative", overflow: "hidden", borderRadius: 14, border: `1px solid ${C.border}`, background: C.card }}>
-          <div style={{ position: "absolute", inset: 0, background: `linear-gradient(180deg, ${C.card}, ${C.blueBg})` }} />
-          {tab === "3d" ? <>
-            <div style={{ position: "absolute", inset: "18% 8% 0", opacity: .5, transform: "perspective(620px) rotateX(58deg)", transformOrigin: "bottom", backgroundImage: `linear-gradient(${C.borderMd} 1px, transparent 1px),linear-gradient(90deg, ${C.borderMd} 1px, transparent 1px)`, backgroundSize: "48px 48px" }} />
-            {[['31%','53%','Bottle','CONFIRMED'],['56%','66%','Ghost Net','DRIFTING'],['76%','58%','Tire','STATIONARY']].map(([x,y,name,status]) => <div key={name} style={{ position:'absolute', left:x, top:y, transform:'translate(-50%,-50%)' }}><div style={{ background:C.card, border:`1px solid ${C.borderMd}`, borderRadius:9, padding:'7px 10px', boxShadow:'0 5px 18px rgba(29,53,57,.10)' }}><b style={{fontSize: 17,color:C.navy}}>{name}</b><div className="font-mono" style={{fontSize: 14,color:C.muted,marginTop:2}}>{status}</div></div><div style={{width:12,height:12,borderRadius:'50%',background:C.navyMd,border:`3px solid ${C.card}`,margin:'5px auto 0'}} /></div>)}
-            <div style={{ position:'absolute', left:'50%', top:38, transform:'translateX(-50%)', textAlign:'center', color:C.navyMd }}><SonarDial size={34}/><div className="font-mono" style={{fontSize: 14,marginTop:5}}>SURVEY VESSEL</div></div>
-          </> : <div style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:'min(440px,80%)', textAlign:'center' }}><div style={{width:64,height:64,borderRadius:18,border:`1px solid ${C.borderMd}`,display:'grid',placeItems:'center',margin:'0 auto 14px',fontSize: 29,color:C.navyMd}}>AR</div><h2 style={{color:C.navy,margin:'0 0 8px'}}>AR Preview</h2><p style={{color:C.muted,lineHeight:1.6,fontSize: 18}}>Camera + GPS detection overlays will appear here when the AR module is connected. This is intentionally a frontend preview, not a simulated live feed.</p></div>}
-          <div style={{position:'absolute',right:14,top:14,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',color:C.muted,fontSize: 16}}><b style={{color:C.navy}}>Layers</b><div style={{marginTop:6}}>✓ Survey path</div><div>✓ Detections</div><div>✓ Labels</div><div>○ Depth grid</div></div>
+
+        <h1
+          style={{
+            margin: "6px 0 4px",
+            fontSize: 36,
+            color: C.navy,
+          }}
+        >
+          Spatial View
+        </h1>
+
+        <p
+          style={{
+            margin: 0,
+            color: C.muted,
+            fontSize: 18,
+          }}
+        >
+          Explore geotagged marine detections through interactive 3D and
+          desktop AR visualization.
+        </p>
+
+        {/* ================= VIEW BUTTONS ================= */}
+
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            margin: "16px 0 10px",
+          }}
+        >
+          <button
+            onClick={() => setTab("3d")}
+            style={tabStyle(tab === "3d")}
+          >
+            3D View
+          </button>
+
+          <button
+            onClick={() => setTab("ar")}
+            style={tabStyle(tab === "ar")}
+          >
+            AR Preview
+          </button>
+        </div>
+
+        {/* ================= VIEW CONTAINER ================= */}
+
+        <div
+          style={{
+            minHeight: 500,
+            position: "relative",
+            overflow: "hidden",
+            borderRadius: 14,
+            border: `1px solid ${C.border}`,
+            background: C.card,
+          }}
+        >
+          {/* 3D VIEW */}
+
+          {tab === "3d" && <ThreeDViewer />}
+
+          {/* DESKTOP AR VIEW */}
+
+          {tab === "ar" && <ARPreview />}
+        </div>
+
+        {/* ================= INFORMATION ================= */}
+
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            marginTop: 12,
+          }}
+        >
+          <div
+            style={{
+              flex: "1 1 280px",
+              background: C.card,
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: "12px 14px",
+            }}
+          >
+            <div
+              style={{
+                color: C.navy,
+                fontWeight: 700,
+                marginBottom: 4,
+              }}
+            >
+              3D Spatial View
+            </div>
+
+            <div
+              style={{
+                color: C.muted,
+                fontSize: 14,
+                lineHeight: 1.5,
+              }}
+            >
+              Backend GPS coordinates are converted into local 3D positions
+              for spatial visualization of detected marine objects.
+            </div>
+          </div>
+
+          <div
+            style={{
+              flex: "1 1 280px",
+              background: C.card,
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: "12px 14px",
+            }}
+          >
+            <div
+              style={{
+                color: C.navy,
+                fontWeight: 700,
+                marginBottom: 4,
+              }}
+            >
+              Desktop AR Preview
+            </div>
+
+            <div
+              style={{
+                color: C.muted,
+                fontSize: 14,
+                lineHeight: 1.5,
+              }}
+            >
+              Displays backend detections as AR-style spatial overlays without
+              requiring a mobile device or live phone camera.
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
 // ─── Shell ─────────────────────────────────────────────────────────────────────
 
 const AQUASCAN_TYPOGRAPHY = `

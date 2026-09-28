@@ -153,5 +153,30 @@ export async function predictImage(file: File): Promise<Detection[]> {
 }
 
 export function getApiBaseUrl() {
-  return API_BASE_URL;
+  return API_BASE_URL; 
+}
+export interface SpatialDetection {
+  detection_id: number;
+  class: string;
+  confidence: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  dimensions?: string | null;
+  survey_id?: string | number | null;
+  status?: string | null;
+  missed_cycles?: number | null;
+  last_seen?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+export async function getSpatialDetections(): Promise<SpatialDetection[]> {
+  const response = await fetch(`${API_BASE_URL}/detections/report`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to load detections (${response.status})`);
+  }
+
+  const data = await response.json();
+
+  return data.detections || [];
 }
