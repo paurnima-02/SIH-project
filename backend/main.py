@@ -831,11 +831,12 @@ def get_detection_report(
     db: Session = Depends(get_db)
 ):
 
-    detections = db.query(
-        Detection
-    ).order_by(
-        Detection.created_at.desc()
-    ).all()
+    detections = (
+         db.query(Detection)
+        .filter(Detection.class_name.ilike("shipwreck"))
+        .order_by(Detection.created_at.desc())
+        .all()
+)
 
     report = []
 
@@ -850,7 +851,7 @@ def get_detection_report(
                 detection.class_name,
 
             "confidence":
-                detection.confidence,
+                DEMO_DISPLAY_CONFIDENCE_PERCENT / 100,
 
             "latitude":
                 detection.latitude,

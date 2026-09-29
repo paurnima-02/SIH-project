@@ -181,7 +181,7 @@ function Detection3D({
           }}
         >
           <div style={{ fontWeight: 700 }}>
-            {label} • {Math.round(confidence * 100)}%
+            {label} • {Math.round(confidence <= 1 ? confidence * 100 : confidence)}%
           </div>
 
           {status && (
