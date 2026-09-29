@@ -15,7 +15,7 @@ export interface BackendDetection {
   score?: number;
   bbox?: number[];
   box?: number[];
-  id?: string;
+  id?: string | number;
 }
 
 export interface BackendPredictResponse {
@@ -30,12 +30,22 @@ export interface BackendPredictResponse {
   image_height?: number;
   original_image?: string;
   annotated_image?: string;
+  waterfall_file?: string;
+  navigation_file?: string;
+  xtf_file?: string;
+  navigation_points?: number;
+  survey_latitude?: number | null;
+  survey_longitude?: number | null;
+  detection_count?: number;
+  saved_detection_ids?: number[];
+  status?: string;
   message?: string;
   detail?: string;
 }
 
 function normaliseType(value: string): Detection["type"] {
   const v = value.toLowerCase().trim().replace(/[\s-]+/g, "_");
+
   const known: Record<string, Detection["type"]> = {
     bottle: "bottle",
     can: "can",
@@ -52,7 +62,11 @@ function normaliseType(value: string): Detection["type"] {
     pipe: "pipe",
     cable: "pipe",
     mine: "mine",
+    mine_cylinder: "mine",
+    crab_pot: "unknown",
+    submarine_pipeline: "pipe",
   };
+
   return known[v] || "unknown";
 }
 
@@ -97,19 +111,25 @@ export async function predictImage(file: File): Promise<Detection[]> {
   });
 
   const raw = await response.text();
+
   let data: BackendPredictResponse | BackendDetection[];
 
   try {
     data = raw ? JSON.parse(raw) : {};
   } catch {
-    throw new Error(`Backend returned invalid JSON (${response.status}).`);
+    throw new Error(
+      `Backend returned invalid JSON (${response.status}).`
+    );
   }
 
   if (!response.ok) {
     const message = !Array.isArray(data)
       ? data.detail || data.message
       : undefined;
-    throw new Error(message || `Request failed with HTTP ${response.status}.`);
+
+    throw new Error(
+      message || `Request failed with HTTP ${response.status}.`
+    );
   }
 
   const payload: BackendPredictResponse = Array.isArray(data)
@@ -120,7 +140,9 @@ export async function predictImage(file: File): Promise<Detection[]> {
     payload.detections || payload.results || payload.objects || [];
 
   return items.map((item, index) => {
-    const label = item.class || item.label || item.type || "Unknown";
+    const label =
+      item.class || item.label || item.type || "Unknown";
+
     const confidence = normaliseConfidence(
       item.confidence ?? item.score
     );
@@ -132,11 +154,17 @@ export async function predictImage(file: File): Promise<Detection[]> {
     );
 
     const type = normaliseType(label);
-    const latitude = payload.geotag?.lat ?? payload.latitude;
-    const longitude = payload.geotag?.lng ?? payload.longitude;
+
+    const latitude =
+      payload.geotag?.lat ?? payload.latitude;
+
+    const longitude =
+      payload.geotag?.lng ?? payload.longitude;
 
     return {
-      id: item.id || `D-${String(index + 1).padStart(4, "0")}`,
+      id:
+        item.id ||
+        `D-${String(index + 1).padStart(4, "0")}`,
       type,
       label,
       confidence,
@@ -152,9 +180,48 @@ export async function predictImage(file: File): Promise<Detection[]> {
   });
 }
 
-export function getApiBaseUrl() {
-  return API_BASE_URL; 
+// XTF upload → FastAPI /predict-xtf
+export async function predictXTF(
+  file: File
+): Promise<BackendPredictResponse> {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+
+  const response = await fetch(
+    `${API_BASE_URL}/predict-xtf`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  const raw = await response.text();
+
+  let data: BackendPredictResponse;
+
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(
+      `Backend returned invalid JSON (${response.status}).`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data.detail ||
+        data.message ||
+        `XTF request failed with HTTP ${response.status}.`
+    );
+  }
+
+  return data;
 }
+
+export function getApiBaseUrl() {
+  return API_BASE_URL;
+}
+
 export interface SpatialDetection {
   detection_id: number;
   class: string;
@@ -169,14 +236,20 @@ export interface SpatialDetection {
   created_at?: string | null;
   updated_at?: string | null;
 }
-export async function getSpatialDetections(): Promise<SpatialDetection[]> {
-  const response = await fetch(`${API_BASE_URL}/detections/report`);
+
+export async function getSpatialDetections(): Promise<
+  SpatialDetection[]
+> {
+  const response = await fetch(
+    `${API_BASE_URL}/detections/report`
+  );
 
   if (!response.ok) {
-    throw new Error(`Failed to load detections (${response.status})`);
+    throw new Error(
+      `Failed to load detections (${response.status})`
+    );
   }
 
   const data = await response.json();
-
   return data.detections || [];
 }

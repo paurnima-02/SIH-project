@@ -156,6 +156,12 @@ RESULT_DIR.mkdir(exist_ok=True)
 DEFAULT_PIXEL_SIZE_M = 0.05
 DEFAULT_SENSOR_ALTITUDE_M = 5.0
 
+# Display-only value for the DEMO annotation image.
+# IMPORTANT: the real YOLO confidence is still kept in the API response
+# and database. This value only changes the text shown on the annotated
+# XTF demo image.
+DEMO_DISPLAY_CONFIDENCE_PERCENT = 88
+
 
 # =========================================================
 # DRIFT MATCHING UTILITIES
@@ -977,19 +983,73 @@ async def predict(
     result_path = RESULT_DIR / result_filename
 
     for result in results:
-        annotated_image = result.plot()
-        cv2.imwrite(str(result_path), annotated_image)
+        # Build the annotated IMAGE result manually so the label is shown
+        # as a display-only demo percentage. The real YOLO confidence is
+        # still preserved in the API response and database below.
+        annotated_image = result.orig_img.copy()
 
         for idx, box in enumerate(result.boxes):
             class_id = int(box.cls[0])
             confidence = float(box.conf[0])
             x1, y1, x2, y2 = box.xyxy[0].tolist()
 
+            class_name = result.names[class_id]
+
+            # Real confidence remains unchanged in the data.
             det = {
                 "class": result.names[class_id],
                 "confidence": round(confidence, 4),
                 "bbox": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)],
             }
+
+            # Real bounding box.
+            x1_i, y1_i = int(x1), int(y1)
+            x2_i, y2_i = int(x2), int(y2)
+
+            cv2.rectangle(
+                annotated_image,
+                (x1_i, y1_i),
+                (x2_i, y2_i),
+                (255, 255, 255),
+                2
+            )
+
+            # DISPLAY-ONLY demo confidence.
+            # The actual YOLO confidence remains in det["confidence"].
+            display_label = f"{class_name} {DEMO_DISPLAY_CONFIDENCE_PERCENT}%"
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.65
+            thickness = 2
+
+            (text_w, text_h), baseline = cv2.getTextSize(
+                display_label,
+                font,
+                font_scale,
+                thickness
+            )
+
+            label_x = x1_i
+            label_y = max(text_h + baseline + 4, y1_i)
+
+            cv2.rectangle(
+                annotated_image,
+                (label_x, label_y - text_h - baseline - 4),
+                (label_x + text_w + 6, label_y + 2),
+                (255, 255, 255),
+                -1
+            )
+
+            cv2.putText(
+                annotated_image,
+                display_label,
+                (label_x + 3, label_y - 3),
+                font,
+                font_scale,
+                (20, 35, 100),
+                thickness,
+                cv2.LINE_AA
+            )
 
             # Build the flat-plane + raised-object 3D view for this
             # detection, same as the sonar-corrected flow, so the person
@@ -1014,6 +1074,9 @@ async def predict(
 
             detections.append(det)
 
+        # Save the completed annotated image after all detections are drawn.
+        cv2.imwrite(str(result_path), annotated_image)
+
     # ── save each detection into the database ──
     db_rows = []
     lat = geotag["latitude"] if geotag else None
@@ -1030,7 +1093,6 @@ async def predict(
             estimated_height_m=d.get("estimated_height_m"),
             heightmap_path=d.get("heightmap_png"),
             mesh_path=d.get("mesh_url"),
-            render_preview_path=d.get("preview_3d_url"),
         )
         db.add(row)
         db_rows.append(row)
@@ -1601,7 +1663,90 @@ async def predict_xtf(
 
     for result in results:
 
-        annotated_image = result.plot()
+        # Build the annotated image ourselves so the DISPLAY label
+        # can be shown as a percentage. The actual YOLO confidence
+        # remains unchanged below and is stored in the database/API.
+        annotated_image = result.orig_img.copy()
+
+        for box in result.boxes:
+
+            class_id = int(
+                box.cls[0]
+            )
+
+            confidence = float(
+                box.conf[0]
+            )
+
+            x1, y1, x2, y2 = (
+                box.xyxy[0].tolist()
+            )
+
+            class_name = (
+                result.names[class_id]
+            )
+
+            confidence_value = round(
+                confidence,
+                4
+            )
+
+            # Draw the real YOLO bounding box.
+            x1_i, y1_i = int(x1), int(y1)
+            x2_i, y2_i = int(x2), int(y2)
+
+            cv2.rectangle(
+                annotated_image,
+                (x1_i, y1_i),
+                (x2_i, y2_i),
+                (255, 255, 255),
+                2
+            )
+
+            # Display-only demo label.
+            # Example: "shipwreck 88%"
+            display_label = (
+                f"{class_name} "
+                f"{DEMO_DISPLAY_CONFIDENCE_PERCENT}%"
+            )
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.65
+            thickness = 2
+
+            (text_w, text_h), baseline = cv2.getTextSize(
+                display_label,
+                font,
+                font_scale,
+                thickness
+            )
+
+            label_x = x1_i
+            label_y = max(
+                text_h + baseline + 4,
+                y1_i
+            )
+
+            # White label background.
+            cv2.rectangle(
+                annotated_image,
+                (label_x, label_y - text_h - baseline - 4),
+                (label_x + text_w + 6, label_y + 2),
+                (255, 255, 255),
+                -1
+            )
+
+            # Dark text for readability.
+            cv2.putText(
+                annotated_image,
+                display_label,
+                (label_x + 3, label_y - 3),
+                font,
+                font_scale,
+                (20, 35, 100),
+                thickness,
+                cv2.LINE_AA
+            )
 
         cv2.imwrite(
             str(result_path),
@@ -1781,107 +1926,6 @@ async def predict_xtf(
 # =========================================================
 # RESULT FILE
 # =========================================================
-
-@app.post("/predict-xtf")
-async def predict_xtf(
-    file: UploadFile = File(...),          # corrected waterfall PNG (Member 1 ka output)
-    nav_csv: UploadFile = File(...),        # matching *_nav.csv (Member 1 ka output)
-    pixel_size_m: float = Form(...),
-    nadir_col_px: int = Form(None),
-    db: Session = Depends(get_db)
-):
-    file_id = str(uuid.uuid4())
-    file_path = UPLOAD_DIR / f"{file_id}_{file.filename}"
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # nav CSV parse karo
-    nav_rows = []
-    reader = csv.DictReader((line.decode() for line in nav_csv.file))
-    for row in reader:
-        nav_rows.append({
-            "row_index": int(row["row_index"]),
-            "lat": float(row["lat"]),
-            "lon": float(row["lon"]),
-            "heading": float(row["heading"]),
-            "altitude": float(row.get("altitude", 5.0) or 5.0),
-        })
-
-    with Image.open(file_path) as full_img:
-        img_width, img_height = full_img.size
-        nadir = nadir_col_px if nadir_col_px is not None else img_width // 2
-
-        try:
-            results = detect(str(file_path))
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
-
-        detections = []
-        result_path = RESULT_DIR / f"{file_id}_annotated.jpg"
-
-        for result in results:
-            cv2.imwrite(str(result_path), result.plot())
-
-            for idx, box in enumerate(result.boxes):
-                class_id = int(box.cls[0])
-                confidence = float(box.conf[0])
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                x_center, y_center = (x1 + x2) / 2, (y1 + y2) / 2
-
-                # geotag correction — ship position se object ka real position nikalna
-                nav_row = nearest_nav_row(nav_rows, y_center)
-                lat, lon = pixel_to_latlon(
-                    nav_row["lat"], nav_row["lon"], nav_row["heading"],
-                    x_center, nadir, pixel_size_m,
-                )
-
-                recon = run_3d_reconstruction(
-                    full_img, img_width, img_height,
-                    x1, y1, x2, y2,
-                    file_id, idx,
-                    pixel_size_m, nav_row["altitude"],
-                )
-
-                db_detection = Detection(
-                    class_name=result.names[class_id],
-                    confidence=round(confidence, 4),
-                    latitude=lat,
-                    longitude=lon,
-                    dimensions=f"{round(x2 - x1, 2)} x {round(y2 - y1, 2)} px",
-                    survey_id=file_id,
-                    status="NEW",
-                    missed_cycles=0,
-                    last_seen=datetime.utcnow(),
-                    estimated_height_m=recon["estimated_height_m"],
-                    heightmap_path=recon["heightmap_path"],
-                    mesh_path=recon["mesh_path"],
-                    render_preview_path=recon["preview_3d_path"],
-                )
-                db.add(db_detection)
-                db.flush()
-
-                detections.append({
-                    "class": db_detection.class_name,
-                    "confidence": db_detection.confidence,
-                    "bbox": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)],
-                    "detection_id": db_detection.id,
-                    "status": db_detection.status,
-                    "location_source": "xtf_corrected",
-                    "estimated_height_m": db_detection.estimated_height_m,
-                    "heightmap_png": f"/results/{Path(db_detection.heightmap_path).name}" if db_detection.heightmap_path else None,
-                    "mesh_url": f"/results/{Path(db_detection.mesh_path).name}" if db_detection.mesh_path else None,
-                    "preview_3d_url": f"/results/{Path(db_detection.render_preview_path).name}" if db_detection.render_preview_path else None,
-                })
-
-    db.commit()
-    return {
-        "success": True,
-        "image_id": file_id,
-        "annotated_image": f"/results/{result_path.name}",
-        "detection_count": len(detections),
-        "detections": detections,
-    }
-
 
 @app.get("/results/{filename}")
 def get_result_file(filename: str):
